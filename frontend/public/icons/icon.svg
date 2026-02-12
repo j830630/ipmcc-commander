@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="96" fill="#0a0a0f"/>
+  <rect x="32" y="32" width="448" height="448" rx="64" fill="#1a1a2e"/>
+  
+  <!-- Chart bars -->
+  <rect x="80" y="280" width="60" height="150" rx="8" fill="#22c55e"/>
+  <rect x="160" y="220" width="60" height="210" rx="8" fill="#22c55e"/>
+  <rect x="240" y="160" width="60" height="270" rx="8" fill="#6366f1"/>
+  <rect x="320" y="200" width="60" height="230" rx="8" fill="#22c55e"/>
+  <rect x="400" y="120" width="60" height="310" rx="8" fill="#6366f1"/>
+  
+  <!-- Trend line -->
+  <path d="M110 240 L190 180 L270 140 L350 160 L430 80" 
+        stroke="#f59e0b" stroke-width="8" stroke-linecap="round" fill="none"/>
+  
+  <!-- Dollar sign -->
+  <circle cx="400" cy="100" r="50" fill="#6366f1"/>
+  <text x="400" y="118" text-anchor="middle" fill="white" font-size="48" font-weight="bold" font-family="Arial">$</text>
+</svg>

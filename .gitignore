@@ -1,0 +1,12 @@
+node_modules/ 
+.next/ 
+__pycache__/ 
+*.pyc 
+*.db 
+.env 
+node_modules/ 
+.next/ 
+__pycache__/ 
+*.pyc 
+*.db 
+.env 
