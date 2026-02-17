@@ -20,7 +20,7 @@ import type {
   ScenarioAnalysis,
 } from './types';
 
-const API_BASE = '/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 // Generic fetch wrapper with error handling
 async function fetchAPI<T>(

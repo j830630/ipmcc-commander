@@ -414,7 +414,7 @@ function ScannerTab() {
     setLoading(true);
     try {
       // Fetch quote
-      const quoteRes = await fetch(`/api/v1/market/quote/${ticker}`);
+      const quoteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/market/quote/${ticker}`);
       if (quoteRes.ok) {
         const q = await quoteRes.json();
         setPrice(q.price || 590);
@@ -428,7 +428,7 @@ function ScannerTab() {
       }
       
       // Fetch GEX (would need actual GEX data source)
-      const gexRes = await fetch(`/api/v1/zero-dte/gex/${ticker}`);
+      const gexRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/zero-dte/gex/${ticker}`);
       if (gexRes.ok) {
         const g = await gexRes.json();
         setGex({

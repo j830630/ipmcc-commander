@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import List, Optional
 
 
+# Calculate the absolute path to the .env file
+ENV_FILE_PATH = Path(__file__).parent.parent / ".env"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
@@ -46,10 +50,11 @@ class Settings(BaseSettings):
     base_dir: Path = Path(__file__).parent.parent
     data_dir: Path = base_dir / "data"
     
+    # Config MUST be nested inside Settings class
     class Config:
-        env_file = ".env"
+        env_file = str(ENV_FILE_PATH)  # Use absolute path
         env_file_encoding = "utf-8"
-        extra = "ignore"  # Ignore extra env vars
+        extra = "ignore"
 
 
 # Global settings instance
