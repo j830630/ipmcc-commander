@@ -20,7 +20,10 @@ import type {
   ScenarioAnalysis,
 } from './types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// Use environment variable or default to localhost:8000
+const API_BASE = process.env.NEXT_PUBLIC_API_URL 
+  ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1` 
+  : 'http://localhost:8000/api/v1';
 
 // Generic fetch wrapper with error handling
 async function fetchAPI<T>(
@@ -28,7 +31,7 @@ async function fetchAPI<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
-  
+
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -36,12 +39,12 @@ async function fetchAPI<T>(
       ...options.headers,
     },
   });
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
     throw new Error(error.detail || `HTTP ${response.status}`);
   }
-  
+
   return response.json();
 }
 
@@ -57,32 +60,32 @@ export const positionsAPI = {
     const query = params.toString() ? `?${params.toString()}` : '';
     return fetchAPI<PositionSummary[]>(`/positions${query}`);
   },
-  
+
   get: async (id: string): Promise<Position> => {
     return fetchAPI<Position>(`/positions/${id}`);
   },
-  
+
   create: async (data: PositionCreate): Promise<Position> => {
     return fetchAPI<Position>('/positions', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
-  
+
   update: async (id: string, data: Partial<Position>): Promise<Position> => {
     return fetchAPI<Position>(`/positions/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
   },
-  
+
   close: async (id: string, data: PositionClose): Promise<Position> => {
     return fetchAPI<Position>(`/positions/${id}/close`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
-  
+
   delete: async (id: string): Promise<{ deleted: boolean; id: string }> => {
     return fetchAPI(`/positions/${id}`, {
       method: 'DELETE',
@@ -100,32 +103,32 @@ export const cyclesAPI = {
     params.set('include_closed', String(includeClosed));
     return fetchAPI<ShortCallCycle[]>(`/cycles/position/${positionId}?${params.toString()}`);
   },
-  
+
   get: async (id: string): Promise<ShortCallCycle> => {
     return fetchAPI<ShortCallCycle>(`/cycles/${id}`);
   },
-  
+
   create: async (data: CycleCreate): Promise<ShortCallCycle> => {
     return fetchAPI<ShortCallCycle>('/cycles', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
-  
+
   update: async (id: string, data: Partial<ShortCallCycle>): Promise<ShortCallCycle> => {
     return fetchAPI<ShortCallCycle>(`/cycles/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
   },
-  
+
   close: async (id: string, data: CycleClose): Promise<ShortCallCycle> => {
     return fetchAPI<ShortCallCycle>(`/cycles/${id}/close`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
-  
+
   roll: async (id: string, data: RollCycleRequest): Promise<{
     success: boolean;
     closed_cycle: ShortCallCycle;
@@ -142,7 +145,7 @@ export const cyclesAPI = {
       body: JSON.stringify(data),
     });
   },
-  
+
   delete: async (id: string): Promise<{ deleted: boolean; id: string }> => {
     return fetchAPI(`/cycles/${id}`, {
       method: 'DELETE',
@@ -158,16 +161,16 @@ export const marketAPI = {
   getQuote: async (ticker: string): Promise<MarketQuote> => {
     return fetchAPI<MarketQuote>(`/market/quote/${ticker}`);
   },
-  
+
   getOptionsChain: async (ticker: string, expiration?: string): Promise<OptionsChain> => {
     const params = expiration ? `?expiration=${expiration}` : '';
     return fetchAPI<OptionsChain>(`/market/chain/${ticker}${params}`);
   },
-  
+
   getExpirations: async (ticker: string): Promise<{ ticker: string; expirations: string[]; count: number }> => {
     return fetchAPI(`/market/expirations/${ticker}`);
   },
-  
+
   getHistory: async (ticker: string, period = '1y'): Promise<{
     ticker: string;
     period: string;
@@ -183,11 +186,11 @@ export const marketAPI = {
   }> => {
     return fetchAPI(`/market/history/${ticker}?period=${period}`);
   },
-  
+
   getTechnicals: async (ticker: string): Promise<TechnicalIndicators> => {
     return fetchAPI<TechnicalIndicators>(`/market/technicals/${ticker}`);
   },
-  
+
   getLeapOptions: async (ticker: string): Promise<{
     ticker: string;
     current_price: number;
@@ -196,7 +199,7 @@ export const marketAPI = {
   }> => {
     return fetchAPI(`/market/leaps/${ticker}`);
   },
-  
+
   getWeeklyOptions: async (ticker: string): Promise<{
     ticker: string;
     current_price: number;
@@ -204,6 +207,46 @@ export const marketAPI = {
     sample_chain: OptionsChain;
   }> => {
     return fetchAPI(`/market/weekly/${ticker}`);
+  },
+
+  getIV: async (ticker: string): Promise<{
+    ticker: string;
+    ivRank: number | null;
+    ivPercentile: number | null;
+    currentIV: number | null;
+    dataSource: string;
+  }> => {
+    return fetchAPI(`/market/iv/${ticker}`);
+  },
+
+  getVix: async (): Promise<{
+    vix: number;
+    vixChange: number;
+    regime: string;
+    dataSource: string;
+  }> => {
+    return fetchAPI('/market/vix');
+  },
+
+  getSector: async (ticker: string): Promise<{
+    ticker: string;
+    sector: string;
+    sectorEtf: string;
+    relativeStrength: number;
+    flowDirection: string;
+    dataSource: string;
+  }> => {
+    return fetchAPI(`/market/sector/${ticker}`);
+  },
+
+  getStatus: async (): Promise<{
+    schwabAuthenticated: boolean;
+    schwabStatus: string;
+    yfinanceAvailable: boolean;
+    primarySource: string;
+    message: string;
+  }> => {
+    return fetchAPI('/market/status');
   },
 };
 
@@ -225,7 +268,7 @@ export const analyzeAPI = {
       body: JSON.stringify(params),
     });
   },
-  
+
   calculateGreeks: async (params: {
     stock_price: number;
     strike: number;
@@ -238,7 +281,7 @@ export const analyzeAPI = {
       body: JSON.stringify(params),
     });
   },
-  
+
   calculateIPMCCGreeks: async (params: {
     stock_price: number;
     long_strike: number;
@@ -254,7 +297,7 @@ export const analyzeAPI = {
       body: JSON.stringify(params),
     });
   },
-  
+
   getScenario: async (params: {
     ticker: string;
     long_strike: number;
@@ -272,7 +315,7 @@ export const analyzeAPI = {
     });
     return fetchAPI<ScenarioAnalysis>(`/analyze/scenario/${params.ticker}?${query.toString()}`);
   },
-  
+
   checkSignals: async (params: {
     position_id: string;
     long_value: number;
@@ -313,11 +356,11 @@ export const dashboardAPI = {
   getSummary: async (): Promise<DashboardSummary> => {
     return fetchAPI<DashboardSummary>('/dashboard/summary');
   },
-  
+
   getGreeks: async (): Promise<any> => {
     return fetchAPI('/dashboard/greeks');
   },
-  
+
   getAlerts: async (): Promise<{
     items: Array<any>;
     count: number;
@@ -325,9 +368,36 @@ export const dashboardAPI = {
   }> => {
     return fetchAPI('/dashboard/alerts');
   },
-  
+
   getVelocity: async (): Promise<any> => {
     return fetchAPI('/dashboard/velocity');
+  },
+};
+
+// ============================================================================
+// SCANNER API
+// ============================================================================
+
+export const scannerAPI = {
+  desk: async (params: {
+    ticker: string;
+    current_price?: number;
+    iv_rank?: number;
+  }): Promise<any> => {
+    return fetchAPI('/scanner/desk', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  strategy: async (params: {
+    strategy: string;
+    tickers: string[];
+  }): Promise<any> => {
+    return fetchAPI('/scanner/strategy', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
   },
 };
 
@@ -341,6 +411,7 @@ export const api = {
   market: marketAPI,
   analyze: analyzeAPI,
   dashboard: dashboardAPI,
+  scanner: scannerAPI,
 };
 
 export default api;

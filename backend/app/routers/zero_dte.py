@@ -431,6 +431,104 @@ async def get_zero_dte_market_data(underlying: str = "SPX"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/gex/{symbol}")
+async def get_gex_levels(symbol: str):
+    """
+    Get GEX (Gamma Exposure) levels for a symbol.
+    
+    Standalone endpoint for GEX data without full market structure.
+    Useful for quick GEX lookups and chart overlays.
+    """
+    
+    from app.services.schwab_service import schwab_service
+    
+    try:
+        symbol_upper = symbol.upper()
+        
+        # Determine quote symbol (use SPY for SPX)
+        quote_symbol = 'SPY' if symbol_upper == 'SPX' else symbol_upper
+        
+        # Get spot price
+        quotes = await schwab_service.get_quotes([quote_symbol])
+        spot_price = 0.0
+        
+        if quote_symbol in quotes:
+            q = quotes[quote_symbol].get('quote', {})
+            spot_price = safe_float(q.get('lastPrice') or q.get('mark') or q.get('closePrice'), 0)
+        
+        if spot_price == 0:
+            raise HTTPException(status_code=404, detail=f"Could not get price for {symbol}")
+        
+        # Scale for SPX
+        if symbol_upper == 'SPX':
+            spot_price *= 10
+        
+        # Get options chain for GEX calculation
+        gex_levels = []
+        data_source = "estimated"
+        
+        try:
+            today_str = date.today().strftime('%Y-%m-%d')
+            chain = await schwab_service.get_option_chain(
+                symbol=quote_symbol,
+                contract_type="ALL",
+                strike_count=40,
+                from_date=today_str,
+                to_date=today_str
+            )
+            
+            call_map = chain.get('callExpDateMap', {})
+            put_map = chain.get('putExpDateMap', {})
+            
+            if call_map and put_map:
+                # Use SPY price for GEX calculation, then scale strikes
+                calc_price = spot_price / 10 if symbol_upper == 'SPX' else spot_price
+                gex_levels = calculate_gex_from_chain(calc_price, call_map, put_map)
+                
+                # Scale strikes for SPX
+                if symbol_upper == 'SPX':
+                    for g in gex_levels:
+                        g.strike = g.strike * 10
+                
+                data_source = "live"
+            else:
+                logger.info(f"No 0-DTE options for {symbol}, using estimates")
+                gex_levels = generate_estimated_gex(spot_price, symbol_upper)
+                
+        except Exception as e:
+            logger.warning(f"Option chain failed for {symbol}: {e}, using estimates")
+            gex_levels = generate_estimated_gex(spot_price, symbol_upper)
+        
+        # Filter to relevant strikes (within 3%)
+        relevant_gex = [g for g in gex_levels if abs(g.strike - spot_price) / spot_price < 0.03]
+        
+        # Calculate key metrics
+        key_levels = find_key_levels(gex_levels, spot_price)
+        total_gex = sum(g.net_gex for g in gex_levels)
+        total_call_oi = sum(g.call_oi for g in gex_levels)
+        total_put_oi = sum(g.put_oi for g in gex_levels)
+        
+        return {
+            "symbol": symbol_upper,
+            "spot_price": round(spot_price, 2),
+            "data_source": data_source,
+            "total_gex": round(total_gex, 2),
+            "total_call_oi": total_call_oi,
+            "total_put_oi": total_put_oi,
+            "put_call_ratio": round(total_put_oi / total_call_oi, 2) if total_call_oi > 0 else 1.0,
+            "regime": determine_regime(total_gex).model_dump(),
+            "key_levels": key_levels.model_dump(),
+            "gex_profile": [g.model_dump() for g in relevant_gex],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GEX error for {symbol}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/vix")
 async def get_vix_data():
     """Get VIX data"""

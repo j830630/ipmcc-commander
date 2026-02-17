@@ -11,6 +11,11 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
+// API BASE URL
+// ============================================================================
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -194,7 +199,7 @@ function analyzeDesk(
   eventReason: string | null
 ): DeskResult {
   const warnings: string[] = [];
-  
+
   // BINARY EVENT CHECK FIRST
   if (hasBinaryEvent) {
     return {
@@ -218,11 +223,11 @@ function analyzeDesk(
       macroReason: eventReason
     };
   }
-  
+
   // REGIME DETECTION
   let regime: MarketRegime;
   let regimeDescription = '';
-  
+
   if (gex.netGex < -3 && Math.abs(flow.volumeDelta) > 1.5) {
     regime = 'trend_day';
     regimeDescription = 'Dealers SHORT gamma + strong flow = TREND DAY. They must chase, amplifying moves.';
@@ -239,12 +244,11 @@ function analyzeDesk(
     regime = 'choppy_fakeout';
     regimeDescription = 'Conflicting signals = CHOPPY FAKEOUT. Capital preservation mode - NO TRADE.';
   }
-  
+
   // FAKEOUT DETECTION
   let fakeoutRisk: 'low' | 'medium' | 'high' = 'low';
   const priceBullish = price > gex.zeroGamma;
-  const flowBullish = flow.volumeDelta > 0.5;
-  
+
   if (priceBullish && flow.volumeDelta < 0) {
     warnings.push('BULL TRAP RISK: Price above Zero Gamma but selling pressure');
     fakeoutRisk = 'high';
@@ -263,11 +267,11 @@ function analyzeDesk(
       fakeoutRisk = fakeoutRisk === 'low' ? 'medium' : fakeoutRisk;
     }
   }
-  
+
   // STATUS DETERMINATION
   let status: DeskStatus;
   let statusReason = '';
-  
+
   if (regime === 'choppy_fakeout') {
     status = 'no_trade';
     statusReason = 'Choppy regime - signals conflicting. Capital preservation mode.';
@@ -281,14 +285,14 @@ function analyzeDesk(
     status = 'green_light';
     statusReason = 'Flow confirmed, structure aligned. Executable setup.';
   }
-  
+
   // DIRECTION & STRUCTURE
   let direction: 'bullish' | 'bearish' | 'neutral' | 'none' = 'none';
   let structuralThesis = '';
   let structure: string | null = null;
   let strikes: string | null = null;
   const atm = Math.round(price / 5) * 5;
-  
+
   if (status !== 'no_trade') {
     if (regime === 'trend_day') {
       if (flow.volumeDelta > 0 && flow.netDelta === 'bullish') {
@@ -323,12 +327,12 @@ function analyzeDesk(
       direction = flow.netDelta;
       structuralThesis = `Gamma squeeze potential. Fast move expected ${direction === 'bullish' ? 'UP' : 'DOWN'}.`;
       structure = direction === 'bullish' ? 'Call Debit Spread' : 'Put Debit Spread';
-      strikes = direction === 'bullish' 
+      strikes = direction === 'bullish'
         ? `Buy ${atm}C / Sell ${atm + 15}C`
         : `Buy ${atm}P / Sell ${atm - 15}P`;
     }
   }
-  
+
   // CONFIDENCE
   let confidence = 50;
   if (flow.volumeDelta !== 0 && flow.netDelta === direction) confidence += 15;
@@ -339,7 +343,7 @@ function analyzeDesk(
   if (fakeoutRisk === 'high') confidence -= 15;
   if (internals.vix > 25) confidence -= 10;
   confidence = Math.max(0, Math.min(100, confidence));
-  
+
   // LEVELS
   const entryZone = { low: price - 3, high: price + 2 };
   const profitTarget = direction === 'bullish' ? Math.min(gex.callWall, atm + 15) :
@@ -351,11 +355,11 @@ function analyzeDesk(
   const invalidationReason = direction === 'bullish' ? 'Break below Zero Gamma invalidates bull thesis' :
                              direction === 'bearish' ? 'Break above Zero Gamma invalidates bear thesis' :
                              direction === 'neutral' ? 'Break beyond expected range' : null;
-  
-  const holdTime = regime === 'trend_day' ? '1-3 hours' : 
+
+  const holdTime = regime === 'trend_day' ? '1-3 hours' :
                    regime === 'mean_reversion' ? '30 min - 2 hours' :
                    regime === 'gamma_squeeze' ? '15-45 min' : '1-2 hours';
-  
+
   return {
     status,
     statusReason,
@@ -387,161 +391,227 @@ function ScannerTab() {
   const [ticker, setTicker] = useState('SPY');
   const [price, setPrice] = useState(590);
   const [loading, setLoading] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [result, setResult] = useState<DeskResult | null>(null);
-  
+
   // GEX Data
   const [gex, setGex] = useState<GEXData>({
     zeroGamma: 590, callWall: 610, putWall: 570, netGex: 0, maxPain: 585, gexFlip: 595
   });
-  
+
   // Flow Data
   const [flow, setFlow] = useState<FlowData>({
     netDelta: 'neutral', volumeDelta: 0, vannaFlow: 'neutral',
     charmEffect: 'neutral', darkPoolPrints: 'none', institutionalFlow: 'neutral'
   });
-  
+
   // Internals
   const [internals, setInternals] = useState<MarketInternals>({
     vold: 0, tick: 0, addLine: 'flat', vix: 18, vixChange: 0
   });
-  
+
   // Event status
   const [hasBinaryEvent, setHasBinaryEvent] = useState(false);
   const [eventReason, setEventReason] = useState<string | null>(null);
-  
+
   // Fetch all data
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setDataError(null);
+    let fetchedPrice = false;
+    
     try {
       // Fetch quote
-      const quoteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/market/quote/${ticker}`);
+      const quoteRes = await fetch(`${API_BASE}/api/v1/market/quote/${ticker}`);
       if (quoteRes.ok) {
         const q = await quoteRes.json();
-        setPrice(q.price || 590);
+        if (q.price) {
+          setPrice(q.price);
+          fetchedPrice = true;
+          // Update GEX levels relative to price
+          setGex(prev => ({
+            ...prev,
+            zeroGamma: Math.round(q.price),
+            callWall: Math.round(q.price) + 20,
+            putWall: Math.round(q.price) - 20,
+            maxPain: Math.round(q.price),
+            gexFlip: Math.round(q.price) + 5
+          }));
+        }
       }
-      
+
       // Fetch VIX
-      const vixRes = await fetch('/api/v1/market/vix');
-      if (vixRes.ok) {
-        const v = await vixRes.json();
-        setInternals(prev => ({ ...prev, vix: v.vix || 18, vixChange: v.vix_change_pct || 0 }));
+      try {
+        const vixRes = await fetch(`${API_BASE}/api/v1/market/vix`);
+        if (vixRes.ok) {
+          const v = await vixRes.json();
+          setInternals(prev => ({ 
+            ...prev, 
+            vix: v.vix || 18, 
+            vixChange: v.vixChange || v.vix_change || 0 
+          }));
+        }
+      } catch (e) {
+        console.warn('VIX fetch failed, using default');
       }
-      
-      // Fetch GEX (would need actual GEX data source)
-      const gexRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/zero-dte/gex/${ticker}`);
-      if (gexRes.ok) {
-        const g = await gexRes.json();
-        setGex({
-          zeroGamma: g.zero_gamma || price,
-          callWall: g.call_wall || price + 20,
-          putWall: g.put_wall || price - 20,
-          netGex: g.net_gex || 0,
-          maxPain: g.max_pain || price,
-          gexFlip: g.gex_flip || price + 5
-        });
+
+      // Fetch GEX (optional - may not exist)
+      try {
+        const gexRes = await fetch(`${API_BASE}/api/v1/zero-dte/gex/${ticker}`);
+        if (gexRes.ok) {
+          const g = await gexRes.json();
+          if (g.zero_gamma || g.zeroGamma) {
+            setGex({
+              zeroGamma: g.zero_gamma || g.zeroGamma || price,
+              callWall: g.call_wall || g.callWall || price + 20,
+              putWall: g.put_wall || g.putWall || price - 20,
+              netGex: g.net_gex || g.netGex || 0,
+              maxPain: g.max_pain || g.maxPain || price,
+              gexFlip: g.gex_flip || g.gexFlip || price + 5
+            });
+          }
+        }
+      } catch (e) {
+        // GEX endpoint may not exist - that's fine
       }
-      
-      // Check events
-      const eventRes = await fetch('/api/v1/scanner/events/0dte');
-      if (eventRes.ok) {
-        const e = await eventRes.json();
-        setHasBinaryEvent(e.has_binary_event || false);
-        setEventReason(e.event_override || null);
+
+      // Check events (optional)
+      try {
+        const eventRes = await fetch(`${API_BASE}/api/v1/scanner/events/0dte`);
+        if (eventRes.ok) {
+          const e = await eventRes.json();
+          setHasBinaryEvent(e.has_binary_event || false);
+          setEventReason(e.event_override || null);
+        }
+      } catch (e) {
+        // Events endpoint may not exist
+      }
+
+      if (!fetchedPrice) {
+        setDataError('Could not fetch live data. Enter manually or check API connection.');
       }
     } catch (err) {
       console.error('Error fetching data:', err);
+      setDataError('Could not fetch live data. Enter manually or check API connection.');
     } finally {
       setLoading(false);
     }
   }, [ticker, price]);
-  
+
   const runAnalysis = () => {
     const r = analyzeDesk(price, gex, flow, internals, hasBinaryEvent, eventReason);
     setResult(r);
   };
-  
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-  
+
   const statusCfg = {
     green_light: { color: 'bg-emerald-500', icon: CheckCircle, text: 'GREEN LIGHT' },
     caution: { color: 'bg-yellow-500', icon: AlertTriangle, text: 'CAUTION' },
     no_trade: { color: 'bg-red-500', icon: Ban, text: 'NO TRADE' }
   };
-  
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* LEFT: Inputs */}
       <div className="space-y-4">
         <h3 className="font-semibold flex items-center gap-2">
           <Activity className="w-4 h-4" />Market Data
+          <button onClick={fetchData} disabled={loading} className="ml-auto text-xs text-primary hover:underline flex items-center gap-1">
+            {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            Refresh
+          </button>
         </h3>
-        
+
+        {/* Data Error Warning */}
+        {dataError && (
+          <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-sm text-yellow-400 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            {dataError}
+          </div>
+        )}
+
         {/* Ticker & Price */}
         <div className="card p-4">
+          <h4 className="text-sm font-medium mb-3 flex items-center gap-2 text-green-500">
+            <TrendingUp className="w-4 h-4" />PRICE & STRUCTURE
+          </h4>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
               <label className="text-xs text-[var(--text-secondary)]">Ticker</label>
               <select value={ticker} onChange={e => setTicker(e.target.value)} className="input w-full mt-1">
-                <option>SPY</option><option>QQQ</option><option>IWM</option><option>SPX</option>
+                <option>SPY</option><option>SPX</option><option>QQQ</option><option>IWM</option>
               </select>
             </div>
             <div>
-              <label className="text-xs text-[var(--text-secondary)]">Price</label>
+              <label className="text-xs text-[var(--text-secondary)]">Current Price</label>
               <input type="number" value={price} onChange={e => setPrice(+e.target.value)} className="input w-full mt-1" />
             </div>
           </div>
-          <button onClick={fetchData} disabled={loading} className="btn w-full flex items-center justify-center gap-2">
-            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            Refresh Data
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-[var(--text-secondary)]">Day High</label>
+              <input type="number" className="input w-full mt-1" placeholder="Optional" />
+            </div>
+            <div>
+              <label className="text-xs text-[var(--text-secondary)]">Day Low</label>
+              <input type="number" className="input w-full mt-1" placeholder="Optional" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="text-xs text-[var(--text-secondary)]">Prev Close</label>
+            <input type="number" className="input w-full mt-1" placeholder="Optional" />
+          </div>
         </div>
-        
+
         {/* GEX Levels */}
         <div className="card p-4">
-          <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-            <Activity className="w-4 h-4 text-purple-500" />GEX Levels
+          <h4 className="text-sm font-medium mb-3 flex items-center gap-2 text-purple-500">
+            <Zap className="w-4 h-4" />GEX LEVELS
           </h4>
           <div className="grid grid-cols-2 gap-2">
             <div><label className="text-xs text-[var(--text-secondary)]">Zero Gamma</label>
               <input type="number" value={gex.zeroGamma} onChange={e => setGex({...gex, zeroGamma: +e.target.value})} className="input w-full mt-1" /></div>
-            <div><label className="text-xs text-[var(--text-secondary)]">Net GEX ($B)</label>
-              <input type="number" step="0.1" value={gex.netGex} onChange={e => setGex({...gex, netGex: +e.target.value})} className="input w-full mt-1" /></div>
             <div><label className="text-xs text-[var(--text-secondary)]">Call Wall</label>
               <input type="number" value={gex.callWall} onChange={e => setGex({...gex, callWall: +e.target.value})} className="input w-full mt-1" /></div>
             <div><label className="text-xs text-[var(--text-secondary)]">Put Wall</label>
               <input type="number" value={gex.putWall} onChange={e => setGex({...gex, putWall: +e.target.value})} className="input w-full mt-1" /></div>
+            <div><label className="text-xs text-[var(--text-secondary)]">Net GEX ($B)</label>
+              <input type="number" step="0.1" value={gex.netGex} onChange={e => setGex({...gex, netGex: +e.target.value})} className="input w-full mt-1" /></div>
+            <div><label className="text-xs text-[var(--text-secondary)]">Max Pain</label>
+              <input type="number" value={gex.maxPain} onChange={e => setGex({...gex, maxPain: +e.target.value})} className="input w-full mt-1" /></div>
           </div>
         </div>
-        
+
         {/* Flow */}
         <div className="card p-4">
-          <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-            <Eye className="w-4 h-4 text-blue-500" />Flow Data
+          <h4 className="text-sm font-medium mb-3 flex items-center gap-2 text-blue-500">
+            <Waves className="w-4 h-4" />FLOW (Manual)
           </h4>
           <div className="grid grid-cols-2 gap-2">
+            <div><label className="text-xs text-[var(--text-secondary)]">Vanna Flow</label>
+              <select value={flow.vannaFlow} onChange={e => setFlow({...flow, vannaFlow: e.target.value as any})} className="input w-full mt-1">
+                <option value="neutral">Neutral</option><option value="supportive">Supportive</option><option value="hostile">Hostile</option>
+              </select></div>
+            <div><label className="text-xs text-[var(--text-secondary)]">Charm Effect</label>
+              <select value={flow.charmEffect} onChange={e => setFlow({...flow, charmEffect: e.target.value as any})} className="input w-full mt-1">
+                <option value="neutral">Neutral</option><option value="pinning">Pinning</option><option value="unpinning">Unpinning</option>
+              </select></div>
             <div><label className="text-xs text-[var(--text-secondary)]">Net Delta</label>
               <select value={flow.netDelta} onChange={e => setFlow({...flow, netDelta: e.target.value as any})} className="input w-full mt-1">
-                <option value="bullish">Bullish</option><option value="bearish">Bearish</option><option value="neutral">Neutral</option>
+                <option value="neutral">Neutral</option><option value="bullish">Bullish</option><option value="bearish">Bearish</option>
               </select></div>
             <div><label className="text-xs text-[var(--text-secondary)]">Vol Delta</label>
               <input type="number" step="0.1" value={flow.volumeDelta} onChange={e => setFlow({...flow, volumeDelta: +e.target.value})} className="input w-full mt-1" /></div>
-            <div><label className="text-xs text-[var(--text-secondary)]">Vanna</label>
-              <select value={flow.vannaFlow} onChange={e => setFlow({...flow, vannaFlow: e.target.value as any})} className="input w-full mt-1">
-                <option value="supportive">Supportive</option><option value="hostile">Hostile</option><option value="neutral">Neutral</option>
-              </select></div>
-            <div><label className="text-xs text-[var(--text-secondary)]">Charm</label>
-              <select value={flow.charmEffect} onChange={e => setFlow({...flow, charmEffect: e.target.value as any})} className="input w-full mt-1">
-                <option value="pinning">Pinning</option><option value="unpinning">Unpinning</option><option value="neutral">Neutral</option>
-              </select></div>
           </div>
         </div>
-        
+
         {/* Internals */}
         <div className="card p-4">
-          <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-            <Gauge className="w-4 h-4 text-orange-500" />Internals
+          <h4 className="text-sm font-medium mb-3 flex items-center gap-2 text-orange-500">
+            <Gauge className="w-4 h-4" />INTERNALS
           </h4>
           <div className="grid grid-cols-2 gap-2">
             <div><label className="text-xs text-[var(--text-secondary)]">VIX</label>
@@ -550,18 +620,22 @@ function ScannerTab() {
               <input type="number" step="0.1" value={internals.vixChange} onChange={e => setInternals({...internals, vixChange: +e.target.value})} className="input w-full mt-1" /></div>
           </div>
         </div>
-        
+
         <button onClick={runAnalysis} className="btn-primary w-full flex items-center justify-center gap-2">
-          <Crosshair className="w-4 h-4" />Analyze
+          <Crosshair className="w-4 h-4" />Analyze Setup
         </button>
       </div>
-      
-      {/* MIDDLE: Result */}
+
+      {/* MIDDLE + RIGHT: Result */}
       <div className="lg:col-span-2">
         {result ? (
           <div className="space-y-4">
             {/* Status */}
-            <div className={`${statusCfg[result.status].color}/10 border border-${statusCfg[result.status].color.replace('bg-', '')}/30 rounded-xl p-6`}>
+            <div className={`rounded-xl p-6 ${
+              result.status === 'green_light' ? 'bg-emerald-500/10 border border-emerald-500/30' :
+              result.status === 'caution' ? 'bg-yellow-500/10 border border-yellow-500/30' :
+              'bg-red-500/10 border border-red-500/30'
+            }`}>
               <div className="flex justify-between items-start mb-4">
                 <div className={`${statusCfg[result.status].color} text-white px-6 py-3 rounded-lg flex items-center gap-2`}>
                   {(() => { const Icon = statusCfg[result.status].icon; return <Icon className="w-6 h-6" />; })()}
@@ -581,16 +655,55 @@ function ScannerTab() {
                 </div>
               )}
             </div>
-            
+
             {/* Regime */}
             <div className="card p-5">
               <h4 className="font-semibold mb-2 flex items-center gap-2">
-                <Zap className="w-5 h-5 text-primary" />REGIME DETECTED
+                <Zap className="w-5 h-5 text-primary" />1. REGIME
               </h4>
               <p className="text-xl font-bold text-primary mb-2">{result.regime.replace(/_/g, ' ').toUpperCase()}</p>
               <p className="text-[var(--text-secondary)]">{result.regimeDescription}</p>
             </div>
-            
+
+            {/* Flow Check */}
+            <div className="card p-5">
+              <h4 className="font-semibold mb-3 flex items-center gap-2">
+                <Eye className="w-5 h-5 text-blue-500" />3. FLOW CHECK
+              </h4>
+              <div className="grid grid-cols-3 gap-4 mb-3">
+                <div className="text-center">
+                  <p className="text-xs text-[var(--text-secondary)] mb-1">Vol Delta</p>
+                  <p className={`text-lg font-bold ${
+                    flow.volumeDelta > 0.5 ? 'text-emerald-500' : 
+                    flow.volumeDelta < -0.5 ? 'text-red-500' : 'text-yellow-500'
+                  }`}>
+                    {flow.volumeDelta > 0.5 ? 'BULLISH' : flow.volumeDelta < -0.5 ? 'BEARISH' : 'NEUTRAL'}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-[var(--text-secondary)] mb-1">Gamma</p>
+                  <p className={`text-lg font-bold ${
+                    gex.netGex < -2 ? 'text-red-500' : 
+                    gex.netGex > 2 ? 'text-emerald-500' : 'text-yellow-500'
+                  }`}>
+                    {gex.netGex < -2 ? 'SHORT' : gex.netGex > 2 ? 'LONG' : 'NEUTRAL'}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-[var(--text-secondary)] mb-1">Institutional</p>
+                  <p className="text-lg font-bold text-yellow-500">NEUTRAL</p>
+                </div>
+              </div>
+              <div className={`p-2 rounded text-sm ${
+                result.fakeoutRisk === 'low' ? 'bg-emerald-500/10 text-emerald-400' :
+                result.fakeoutRisk === 'medium' ? 'bg-yellow-500/10 text-yellow-400' :
+                'bg-red-500/10 text-red-400'
+              }`}>
+                <AlertTriangle className="w-4 h-4 inline mr-2" />
+                Fakeout Risk: {result.fakeoutRisk.toUpperCase()}
+              </div>
+            </div>
+
             {/* Trade Structure */}
             {result.structure && result.status !== 'no_trade' && (
               <div className="card p-5 border border-primary/30">
@@ -599,7 +712,7 @@ function ScannerTab() {
                 </h4>
                 <p className="mb-4">{result.structuralThesis}</p>
                 <div className={`p-4 rounded-lg mb-4 ${
-                  result.direction === 'bullish' ? 'bg-emerald-500/10' : 
+                  result.direction === 'bullish' ? 'bg-emerald-500/10' :
                   result.direction === 'bearish' ? 'bg-red-500/10' : 'bg-blue-500/10'
                 }`}>
                   <p className="text-lg font-bold">{result.structure}</p>
@@ -621,7 +734,7 @@ function ScannerTab() {
                 </div>
               </div>
             )}
-            
+
             {/* Warnings */}
             {result.warnings.length > 0 && (
               <div className="card p-4 bg-yellow-500/10 border border-yellow-500/30">
@@ -656,19 +769,19 @@ function ScannerTab() {
 function AuditTab() {
   const [rules, setRules] = useState(DESK_RULES);
   const categories = [...new Set(rules.map(r => r.category))];
-  
+
   const toggleRule = (id: string) => {
-    setRules(prev => prev.map(r => 
+    setRules(prev => prev.map(r =>
       r.id === id ? { ...r, passed: r.passed === true ? false : r.passed === false ? null : true } : r
     ));
   };
-  
+
   const passedCount = rules.filter(r => r.passed === true).length;
   const failedCount = rules.filter(r => r.passed === false).length;
   const canTrade = failedCount === 0 && passedCount >= 20;
-  
+
   const resetAll = () => setRules(DESK_RULES);
-  
+
   return (
     <div className="space-y-6">
       {/* Summary */}
@@ -680,7 +793,7 @@ function AuditTab() {
               Self-Audit Status
             </h3>
             <p className="text-[var(--text-secondary)]">
-              {canTrade ? 'All critical rules passed - CLEAR TO TRADE' : 
+              {canTrade ? 'All critical rules passed - CLEAR TO TRADE' :
                failedCount > 0 ? `${failedCount} rule(s) failed - DO NOT TRADE` :
                `${passedCount}/${rules.length} rules checked`}
             </p>
@@ -690,14 +803,14 @@ function AuditTab() {
           </button>
         </div>
       </div>
-      
+
       {/* Rules by Category */}
       {categories.map(cat => (
         <div key={cat} className="card p-4">
           <h4 className="font-semibold mb-3">{cat}</h4>
           <div className="space-y-2">
             {rules.filter(r => r.category === cat).map(rule => (
-              <div 
+              <div
                 key={rule.id}
                 onClick={() => toggleRule(rule.id)}
                 className={`p-3 rounded-lg cursor-pointer flex items-center gap-3 transition-colors ${
@@ -729,7 +842,7 @@ function AuditTab() {
 function SimulatorTab() {
   const [selectedScenario, setSelectedScenario] = useState(SIMULATOR_SCENARIOS[0]);
   const [result, setResult] = useState<DeskResult | null>(null);
-  
+
   const runScenario = () => {
     const gex: GEXData = {
       ...selectedScenario.gex,
@@ -746,11 +859,11 @@ function SimulatorTab() {
       vold: 0, tick: 0, addLine: 'flat',
       ...selectedScenario.internals
     };
-    
+
     const r = analyzeDesk(gex.zeroGamma, gex, flow, internals, false, null);
     setResult(r);
   };
-  
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Scenarios */}
@@ -784,7 +897,7 @@ function SimulatorTab() {
           <Play className="w-4 h-4" />Run Scenario
         </button>
       </div>
-      
+
       {/* Result */}
       <div>
         {result ? (
@@ -838,14 +951,13 @@ function SimulatorTab() {
 // === JOURNAL TAB ===
 function JournalTab() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  
+
   // Load from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('desk_journal');
     if (saved) setEntries(JSON.parse(saved));
   }, []);
-  
+
   // Stats
   const stats = {
     total: entries.length,
@@ -854,7 +966,7 @@ function JournalTab() {
     followedRules: entries.filter(e => e.followedRules).length,
     totalPnL: entries.reduce((sum, e) => sum + (e.pnl || 0), 0)
   };
-  
+
   return (
     <div className="space-y-6">
       {/* Stats */}
@@ -884,7 +996,7 @@ function JournalTab() {
           <p className="text-xs text-[var(--text-secondary)]">Total P&L</p>
         </div>
       </div>
-      
+
       {/* Entries */}
       {entries.length > 0 ? (
         <div className="card overflow-hidden">
@@ -933,40 +1045,45 @@ function JournalTab() {
 
 export default function ZeroDTEPage() {
   const [activeTab, setActiveTab] = useState<DeskTab>('scanner');
-  
+
   const tabs = [
     { id: 'scanner' as DeskTab, label: 'The Desk', icon: Crosshair },
     { id: 'audit' as DeskTab, label: 'Self-Audit', icon: ClipboardCheck },
     { id: 'simulator' as DeskTab, label: 'Simulator', icon: FlaskConical },
     { id: 'journal' as DeskTab, label: 'Journal', icon: FileText }
   ];
-  
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div>
         <Link href="/" className="text-sm text-[var(--text-secondary)] hover:text-primary flex items-center gap-1 mb-2">
-          <ArrowLeft className="w-4 h-4" />Dashboard
+          <ArrowLeft className="w-4 h-4" />Back
         </Link>
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Timer className="w-6 h-6 text-red-500" />
-          0-DTE Command Center
+          Institutional Trade Scanner
         </h1>
         <p className="text-sm text-[var(--text-secondary)] mt-1">
-          The Desk Methodology • No Scalping • No Lottos • Defined Risk Only
+          "The Desk" - Technical + Macro Validation
         </p>
       </div>
-      
-      {/* Methodology Banner */}
-      <div className="card p-3 bg-red-500/5 border border-red-500/20">
-        <div className="flex items-center gap-3">
-          <Lock className="w-5 h-5 text-red-500" />
-          <p className="text-sm">
-            <strong>THE DESK RULES:</strong> If signals conflict → NO TRADE. If fakeout detected → NO TRADE. Capital preservation above all.
-          </p>
+
+      {/* Decision Hierarchy */}
+      <div className="card p-4 bg-[var(--surface)]">
+        <div className="flex items-start gap-3">
+          <Lock className="w-5 h-5 text-primary mt-0.5" />
+          <div>
+            <p className="font-semibold mb-1">DECISION HIERARCHY:</p>
+            <ol className="text-sm text-[var(--text-secondary)] space-y-1">
+              <li>1. <strong>Binary Events</strong> (Earnings/FOMC &lt;5d) → Override ALL signals to NO TRADE</li>
+              <li>2. <strong>Macro Trends</strong> (Sector rotation, VIX) → Adjust confidence ±15 pts</li>
+              <li>3. <strong>Technical/GEX</strong> → Valid only if Tiers 1 & 2 clear</li>
+            </ol>
+          </div>
         </div>
       </div>
-      
+
       {/* Tabs */}
       <div className="flex gap-2 border-b border-[var(--border)] pb-2">
         {tabs.map(tab => (
@@ -974,8 +1091,8 @@ export default function ZeroDTEPage() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2 rounded-t-lg flex items-center gap-2 transition-colors ${
-              activeTab === tab.id 
-                ? 'bg-primary text-white' 
+              activeTab === tab.id
+                ? 'bg-primary text-white'
                 : 'hover:bg-[var(--surface)]'
             }`}
           >
@@ -984,7 +1101,7 @@ export default function ZeroDTEPage() {
           </button>
         ))}
       </div>
-      
+
       {/* Tab Content */}
       {activeTab === 'scanner' && <ScannerTab />}
       {activeTab === 'audit' && <AuditTab />}
