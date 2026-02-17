@@ -1,14 +1,18 @@
 """
 IPMCC Commander - Analytics API Router
 Endpoints for portfolio analytics, roll suggestions, and earnings calendar
+FIXED: Async SQLAlchemy 2.0 syntax
 """
 
 from fastapi import APIRouter, Depends, Query
 from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.position import Position
+from app.models.history import RollSuggestion
 from app.services.analytics_service import get_analytics_service
 from app.services.roll_suggestions_service import get_roll_suggestions_service
 from app.services.earnings_service import earnings_calendar_service
@@ -19,89 +23,91 @@ router = APIRouter()
 # ============ PORTFOLIO ANALYTICS ============
 
 @router.get("/summary")
-async def get_portfolio_summary(db: Session = Depends(get_db)):
+async def get_portfolio_summary(db: AsyncSession = Depends(get_db)):
     """Get high-level portfolio summary with P&L and trade stats."""
     service = get_analytics_service(db)
-    return service.get_portfolio_summary()
+    return await service.get_portfolio_summary()
 
 
 @router.get("/pnl/history")
 async def get_pnl_history(
     days: int = Query(90, description="Number of days to look back"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get P&L history for charting."""
     service = get_analytics_service(db)
-    return service.get_pnl_over_time(days)
+    return await service.get_pnl_over_time(days)
 
 
 @router.get("/income/by-period")
 async def get_income_by_period(
     period: str = Query("monthly", description="Aggregation period: daily, weekly, monthly"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get premium income aggregated by period."""
     service = get_analytics_service(db)
-    return service.get_income_by_period(period)
+    return await service.get_income_by_period(period)
 
 
 @router.get("/performance/by-ticker")
-async def get_performance_by_ticker(db: Session = Depends(get_db)):
+async def get_performance_by_ticker(db: AsyncSession = Depends(get_db)):
     """Get performance breakdown by ticker."""
     service = get_analytics_service(db)
-    return service.get_performance_by_ticker()
+    return await service.get_performance_by_ticker()
 
 
 @router.get("/performance/by-strategy")
-async def get_performance_by_strategy(db: Session = Depends(get_db)):
+async def get_performance_by_strategy(db: AsyncSession = Depends(get_db)):
     """Get performance breakdown by strategy."""
     service = get_analytics_service(db)
-    return service.get_performance_by_strategy()
+    return await service.get_performance_by_strategy()
 
 
 @router.get("/greeks/history")
 async def get_greeks_history(
     days: int = Query(30, description="Number of days to look back"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get portfolio Greeks over time."""
     service = get_analytics_service(db)
-    return service.get_greeks_history(days)
+    return await service.get_greeks_history(days)
 
 
 @router.get("/drawdown")
-async def get_drawdown_analysis(db: Session = Depends(get_db)):
+async def get_drawdown_analysis(db: AsyncSession = Depends(get_db)):
     """Get drawdown metrics."""
     service = get_analytics_service(db)
-    return service.get_drawdown_analysis()
+    return await service.get_drawdown_analysis()
 
 
 @router.get("/trade-stats")
-async def get_trade_statistics(db: Session = Depends(get_db)):
+async def get_trade_statistics(db: AsyncSession = Depends(get_db)):
     """Get detailed trade statistics."""
     service = get_analytics_service(db)
-    return service.get_trade_statistics()
+    return await service.get_trade_statistics()
 
 
 @router.post("/snapshot")
-async def record_snapshot(db: Session = Depends(get_db)):
+async def record_snapshot(db: AsyncSession = Depends(get_db)):
     """Record today's portfolio snapshot."""
     service = get_analytics_service(db)
-    snapshot = service.record_daily_snapshot()
+    snapshot = await service.record_daily_snapshot()
     return {"status": "success", "snapshot_date": snapshot.snapshot_date if snapshot else None}
 
 
 # ============ ROLL SUGGESTIONS ============
 
 @router.get("/roll-suggestions")
-async def get_roll_suggestions(db: Session = Depends(get_db)):
+async def get_roll_suggestions(db: AsyncSession = Depends(get_db)):
     """Get all roll suggestions for active positions."""
     service = get_roll_suggestions_service(db)
     
-    # Get active positions
-    positions = db.query(Position).filter(Position.status == "active").all()
+    # Get active positions using async syntax
+    stmt = select(Position).filter(Position.status == "active")
+    result = await db.execute(stmt)
+    positions = result.scalars().all()
     
-    suggestions = service.analyze_all_positions(positions)
+    suggestions = await service.analyze_all_positions(positions)
     
     return {
         "suggestions": suggestions,
@@ -114,19 +120,23 @@ async def get_roll_suggestions(db: Session = Depends(get_db)):
 @router.get("/roll-suggestions/{position_id}")
 async def get_roll_suggestions_for_position(
     position_id: str,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get roll suggestions for a specific position."""
     service = get_roll_suggestions_service(db)
     
-    position = db.query(Position).filter(Position.id == position_id).first()
+    # Get position using async syntax
+    stmt = select(Position).filter(Position.id == position_id)
+    result = await db.execute(stmt)
+    position = result.scalar_one_or_none()
+    
     if not position:
         return {"error": "Position not found", "suggestions": []}
     
     # In production, you'd fetch current market data here
     current_price = position.current_value or position.entry_price
     
-    suggestions = service.analyze_position(position, current_price)
+    suggestions = await service.analyze_position(position, current_price)
     
     return {
         "position_id": position_id,
@@ -138,19 +148,21 @@ async def get_roll_suggestions_for_position(
 @router.post("/roll-suggestions/{suggestion_id}/execute")
 async def mark_suggestion_executed(
     suggestion_id: str,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Mark a roll suggestion as executed."""
-    from app.models.history import RollSuggestion
     from datetime import datetime
     
-    suggestion = db.query(RollSuggestion).filter(RollSuggestion.id == suggestion_id).first()
+    stmt = select(RollSuggestion).filter(RollSuggestion.id == suggestion_id)
+    result = await db.execute(stmt)
+    suggestion = result.scalar_one_or_none()
+    
     if not suggestion:
         return {"error": "Suggestion not found"}
     
     suggestion.status = "executed"
     suggestion.executed_at = datetime.now().isoformat()
-    db.commit()
+    await db.commit()
     
     return {"status": "success", "suggestion_id": suggestion_id}
 
@@ -159,20 +171,22 @@ async def mark_suggestion_executed(
 async def dismiss_suggestion(
     suggestion_id: str,
     reason: str = Query(None, description="Reason for dismissing"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Dismiss a roll suggestion."""
-    from app.models.history import RollSuggestion
     from datetime import datetime
     
-    suggestion = db.query(RollSuggestion).filter(RollSuggestion.id == suggestion_id).first()
+    stmt = select(RollSuggestion).filter(RollSuggestion.id == suggestion_id)
+    result = await db.execute(stmt)
+    suggestion = result.scalar_one_or_none()
+    
     if not suggestion:
         return {"error": "Suggestion not found"}
     
     suggestion.status = "dismissed"
     suggestion.dismissed_at = datetime.now().isoformat()
     suggestion.dismissed_reason = reason
-    db.commit()
+    await db.commit()
     
     return {"status": "success", "suggestion_id": suggestion_id}
 
@@ -188,14 +202,16 @@ async def get_earnings_date(ticker: str):
 @router.get("/earnings")
 async def get_earnings_for_portfolio(
     tickers: str = Query(None, description="Comma-separated list of tickers"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get earnings dates for portfolio tickers."""
     if tickers:
         ticker_list = [t.strip().upper() for t in tickers.split(",")]
     else:
-        # Get tickers from active positions
-        positions = db.query(Position).filter(Position.status == "active").all()
+        # Get tickers from active positions using async syntax
+        stmt = select(Position).filter(Position.status == "active")
+        result = await db.execute(stmt)
+        positions = result.scalars().all()
         ticker_list = list(set(p.ticker for p in positions))
     
     if not ticker_list:
@@ -212,11 +228,13 @@ async def get_earnings_for_portfolio(
 @router.get("/earnings/upcoming")
 async def get_upcoming_earnings(
     days: int = Query(30, description="Days ahead to look"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get upcoming earnings for all portfolio tickers."""
-    # Get tickers from active positions
-    positions = db.query(Position).filter(Position.status == "active").all()
+    # Get tickers from active positions using async syntax
+    stmt = select(Position).filter(Position.status == "active")
+    result = await db.execute(stmt)
+    positions = result.scalars().all()
     ticker_list = list(set(p.ticker for p in positions))
     
     if not ticker_list:
@@ -244,11 +262,15 @@ async def check_earnings_risk(
 
 
 @router.get("/earnings/portfolio-risk")
-async def check_portfolio_earnings_risk(db: Session = Depends(get_db)):
+async def check_portfolio_earnings_risk(db: AsyncSession = Depends(get_db)):
     """Check earnings risk for all active positions."""
     from app.models.cycle import ShortCallCycle
+    from sqlalchemy.orm import selectinload
     
-    positions = db.query(Position).filter(Position.status == "active").all()
+    # Get positions with their cycles using async syntax
+    stmt = select(Position).filter(Position.status == "active").options(selectinload(Position.cycles))
+    result = await db.execute(stmt)
+    positions = result.scalars().all()
     
     risks = []
     for position in positions:

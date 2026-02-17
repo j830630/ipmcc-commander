@@ -1,18 +1,24 @@
 """
 IPMCC Commander - Earnings Calendar Service
 Fetches and tracks earnings dates for portfolio tickers
+FIXED: Cache service instantiation and async compatibility
 """
 
 import logging
 from datetime import datetime, date, timedelta
 from typing import Dict, Any, List, Optional
 import yfinance as yf
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.history import EarningsEvent
-from app.services.cache_service import cache_service
+from app.services.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
+
+# Create a singleton cache instance
+_cache = CacheService()
 
 
 class EarningsCalendarService:
@@ -26,6 +32,7 @@ class EarningsCalendarService:
     
     def __init__(self, db: Optional[Session] = None):
         self.db = db
+        self.cache = _cache
     
     def get_earnings_date(self, ticker: str) -> Optional[Dict[str, Any]]:
         """
@@ -35,15 +42,18 @@ class EarningsCalendarService:
         cache_key = f"earnings:{ticker}"
         
         # Check cache first
-        cached = cache_service.get(cache_key)
-        if cached:
-            return cached
+        try:
+            cached = self.cache.get(cache_key)
+            if cached:
+                return cached
+        except Exception as e:
+            logger.debug(f"Cache miss or error for {ticker}: {e}")
         
         try:
             stock = yf.Ticker(ticker)
             calendar = stock.calendar
             
-            if calendar is None or calendar.empty:
+            if calendar is None or (hasattr(calendar, 'empty') and calendar.empty):
                 # No earnings data available
                 result = {
                     "ticker": ticker,
@@ -51,7 +61,10 @@ class EarningsCalendarService:
                     "has_earnings": False,
                     "source": "yahoo_finance"
                 }
-                cache_service.set(cache_key, result, ttl=self.CACHE_TTL)
+                try:
+                    self.cache.set(cache_key, result, ttl=self.CACHE_TTL)
+                except:
+                    pass
                 return result
             
             # Extract earnings date
@@ -114,7 +127,10 @@ class EarningsCalendarService:
                 except:
                     result["days_until"] = None
             
-            cache_service.set(cache_key, result, ttl=self.CACHE_TTL)
+            try:
+                self.cache.set(cache_key, result, ttl=self.CACHE_TTL)
+            except:
+                pass
             return result
             
         except Exception as e:
@@ -237,8 +253,43 @@ class EarningsCalendarService:
         upcoming.sort(key=lambda x: x["earnings_date"])
         return upcoming
     
+    async def save_earnings_event_async(self, db: AsyncSession, earnings_data: Dict[str, Any]) -> Optional[EarningsEvent]:
+        """Save or update earnings event in database (async version)."""
+        if not earnings_data.get("earnings_date"):
+            return None
+        
+        # Check if already exists
+        stmt = select(EarningsEvent).filter(
+            EarningsEvent.ticker == earnings_data["ticker"],
+            EarningsEvent.earnings_date == earnings_data["earnings_date"]
+        )
+        result = await db.execute(stmt)
+        existing = result.scalar_one_or_none()
+        
+        if existing:
+            # Update existing
+            existing.eps_estimate = earnings_data.get("eps_estimate")
+            existing.revenue_estimate = earnings_data.get("revenue_estimate")
+            existing.updated_at = datetime.now().isoformat()
+            await db.commit()
+            return existing
+        else:
+            # Create new
+            event = EarningsEvent(
+                ticker=earnings_data["ticker"],
+                earnings_date=earnings_data["earnings_date"],
+                earnings_time=earnings_data.get("earnings_time"),
+                eps_estimate=earnings_data.get("eps_estimate"),
+                revenue_estimate=earnings_data.get("revenue_estimate"),
+                source=earnings_data.get("source", "yahoo_finance"),
+            )
+            db.add(event)
+            await db.commit()
+            await db.refresh(event)
+            return event
+    
     def save_earnings_event(self, earnings_data: Dict[str, Any]) -> Optional[EarningsEvent]:
-        """Save or update earnings event in database."""
+        """Save or update earnings event in database (sync version - legacy)."""
         if not self.db or not earnings_data.get("earnings_date"):
             return None
         

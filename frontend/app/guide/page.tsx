@@ -1,39 +1,64 @@
 'use client';
 
 import { useState } from 'react';
-import { 
-  BookOpen, 
-  TrendingUp, 
-  Settings, 
-  AlertTriangle, 
-  BarChart3,
+import {
+  BookOpen,
+  TrendingUp,
+  Target,
+  GitBranch,
+  DollarSign,
   ChevronRight,
   ChevronDown,
-  Lightbulb,
-  Target,
-  Shield,
+  AlertTriangle,
+  CheckCircle,
   Clock,
-  GitBranch,
-  ArrowDownUp
+  BarChart3,
+  Settings,
+  Lightbulb,
+  Shield,
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type StrategyType = 'ipmcc' | '112-trade' | 'strangles' | 'credit-spreads';
 
-// Strategy configurations
-const STRATEGIES = {
-  ipmcc: {
+interface QuickStat {
+  label: string;
+  value: string;
+  icon: React.ElementType;
+}
+
+interface Section {
+  id: string;
+  title: string;
+  icon: React.ElementType;
+  content: string;
+}
+
+interface Strategy {
+  name: string;
+  icon: React.ElementType;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  description: string;
+  quickStats: QuickStat[];
+  sections: Section[];
+}
+
+const STRATEGIES: Record<StrategyType, Strategy> = {
+  'ipmcc': {
     name: 'Income PMCC',
     icon: TrendingUp,
-    color: 'text-green-500',
-    bgColor: 'bg-green-500/10',
-    borderColor: 'border-green-500/30',
-    description: 'Cash-flow-first covered call alternative using LEAPs',
+    color: 'text-emerald-500',
+    bgColor: 'bg-emerald-500/10',
+    borderColor: 'border-emerald-500/30',
+    description: 'Cash-flow-first strategy prioritizing weekly premium collection over capital appreciation',
     quickStats: [
-      { label: 'LEAP Delta', value: '70-90Δ', icon: Shield },
-      { label: 'Short Strike', value: 'ATM (50Δ)', icon: Target },
-      { label: 'Short Duration', value: '7 DTE', icon: Clock },
-      { label: 'Roll Threshold', value: '80%', icon: TrendingUp },
+      { label: 'Market View', value: 'Bullish', icon: TrendingUp },
+      { label: 'Ideal DTE', value: '7 / 180+', icon: Clock },
+      { label: 'Target Delta', value: '70-90', icon: Target },
+      { label: 'Risk', value: 'Defined', icon: Shield },
     ],
     sections: [
       {
@@ -41,59 +66,72 @@ const STRATEGIES = {
         title: '1. What is Income PMCC?',
         icon: BookOpen,
         content: `
-## The Income Poor Man's Covered Call
+## The Income PMCC Strategy
 
-The Income PMCC is a **cash-flow-first options strategy** that prioritizes weekly extrinsic value collection over capital appreciation.
+Income PMCC (Poor Man's Covered Call) is a cash-flow-first options strategy that prioritizes weekly extrinsic value collection over capital appreciation.
 
-### Standard PMCC vs Income PMCC
+**The Mantra:** "Extrinsic Value, Over Time"
 
-| Aspect | Standard PMCC | Income PMCC |
-|--------|---------------|-------------|
-| **Short Strike** | OTM (10-30Δ) | ATM (50Δ) or ITM |
-| **Objective** | Appreciation + some premium | Weekly cash flow (extrinsic) |
-| **Best For** | Bull markets | Any market condition |
+### How It Works
 
-### The Core Mantra
+**Long Leg (LEAP Call):**
+Acts as a stock substitute with 70-90 delta exposure.
+Typically 180+ DTE for maximum leverage and time decay protection.
+Deep ITM to maximize delta and minimize extrinsic paid.
 
-> **"Extrinsic Value, Over Time"**
-
-Think of yourself as an insurance underwriter, not a stock investor. You collect premiums (extrinsic value) from buyers seeking protection or speculation.
+**Short Leg (Weekly Call):**
+Sold ATM or slightly ITM to maximize weekly extrinsic capture.
+7 DTE is the sweet spot for theta decay.
+Rolled weekly for consistent income.
 
 ### Why It Works
 
-1. **Theta decay is reliable** — Time passes no matter what the market does
-2. **ATM options have maximum extrinsic** — More premium to harvest
-3. **Reduced capital requirement** — LEAP costs less than 100 shares
-4. **Works in any direction** — Even flat or down markets generate income
+The strategy exploits the difference in theta decay rates. The short weekly decays rapidly while the long LEAP holds value. This creates a positive theta position that profits from time passing.
+
+### Capital Efficiency
+
+Instead of buying 100 shares at $500 each ($50,000), you control the same exposure with a LEAP costing $5,000-$10,000. This frees up capital and improves ROI.
         `,
       },
       {
         id: 'setup',
-        title: '2. Setting Up a Trade',
+        title: '2. Setting Up the Trade',
         icon: Target,
         content: `
-## Trade Entry Criteria
+## Entry Criteria Checklist
 
-### Market Conditions
-- **Weekly uptrend**: 21 EMA > 50 EMA > 200 EMA
-- **Daily RSI**: < 50 or reversing from oversold
-- **Price at support**: Lower Bollinger, 50/100/200 MA, or 3-ATR band
+### Technical Requirements
 
-### Underlying Selection
-✅ High-quality stocks and ETFs only:
-- **ETFs**: SPY, QQQ, IWM, DIA
-- **Mega-caps**: AAPL, TSLA, NVDA, MSFT, AMZN
-- **High IV**: MSTR, COIN (for aggressive traders)
+**Weekly Chart Uptrend:**
+The 21 EMA should be above the 50 EMA.
+This confirms the underlying trend supports a bullish position.
 
-### Long LEAP Configuration
-- **Delta**: 70-90 (prefer 80)
-- **DTE**: 180-600 days (sweet spot: 12-18 months)
-- **Strike**: Deep in-the-money
+**Daily RSI Positioning:**
+RSI below 50 or reversing from oversold.
+Avoid entering when RSI is above 70 (overbought).
 
-### Short Call Configuration
-- **Strike**: ATM (at-the-money) for maximum extrinsic
-- **DTE**: 7 days (can range 3-14)
-- **Timing**: Open Monday-Tuesday, close/roll Thursday-Friday
+**Price at Support:**
+Look for entries near the lower Bollinger Band, 50 EMA, or key moving averages (100/200).
+Support levels provide natural stop-loss points.
+
+### Long Leg Selection
+
+**Delta:** Target 70-90 delta (80 is ideal).
+**DTE:** Minimum 180 days, prefer 365+.
+**Strike:** Deep ITM to minimize extrinsic paid.
+**Example:** Stock at $600 → Buy $500 strike LEAP.
+
+### Short Leg Selection
+
+**Strike:** ATM (at-the-money) or slightly ITM.
+**DTE:** 7 days (can go 3-14 based on conditions).
+**Premium Target:** Maximum weekly extrinsic available.
+
+### Quality Filters
+
+Trade only high-quality, stable growth stocks and ETFs.
+Avoid earnings announcements within short call DTE.
+Ensure liquid options market (tight bid-ask spreads).
         `,
       },
       {
@@ -106,29 +144,29 @@ Think of yourself as an insurance underwriter, not a stock investor. You collect
 ### Short Call Management
 
 **Roll When:**
-- 80-90% of extrinsic value captured
-- 1-2 days before expiration
-- Stock has moved significantly ITM on your short
+When 80-90% of extrinsic value is captured.
+1-2 days before expiration.
+When stock has moved significantly ITM on your short.
 
 **Roll To:**
-- Same strike (if neutral) 
-- Higher strike (if bullish/assigned risk)
-- Lower strike (if bearish/want more protection)
+Same strike if neutral outlook.
+Higher strike if bullish or assignment risk.
+Lower strike if bearish or want more protection.
 
 ### Exit Signals
 
-🔴 **EMERGENCY EXIT** (Net loss > 30%)
-- Close entire position immediately
-- Don't average down
-- Reassess market conditions before re-entry
+**EMERGENCY EXIT** (Net loss exceeds 30%):
+Close entire position immediately.
+Do not average down.
+Reassess market conditions before re-entry.
 
-🟡 **TAKE PROFIT** (50%+ total gain)
-- Consider closing entire position
-- Or continue if thesis unchanged
+**TAKE PROFIT** (50%+ total gain):
+Consider closing entire position.
+Or continue if thesis unchanged and position healthy.
 
-🟡 **LEAP THETA WARNING** (< 60 DTE)
-- Roll LEAP to later expiration
-- Or close position and restart
+**LEAP THETA WARNING** (Less than 60 DTE remaining):
+Roll LEAP to later expiration.
+Or close position and restart fresh.
         `,
       },
       {
@@ -138,20 +176,23 @@ Think of yourself as an insurance underwriter, not a stock investor. You collect
         content: `
 ## How IPMCC Behaves in Different Markets
 
-### 📈 Stock Goes Up
-- Short call goes ITM → **Roll up and out** for net credit
-- LEAP increases in value → Total position profits
-- **Result**: Profit from both LEAP appreciation + premium collected
+### Stock Goes Up
 
-### 📊 Stock Stays Flat
-- Short call expires worthless → **Keep all premium**
-- LEAP maintains value → Minimal change
-- **Result**: Pure theta profit (ideal scenario!)
+Short call goes ITM → Roll up and out for net credit.
+LEAP increases in value → Total position profits.
+**Result:** Profit from both LEAP appreciation and premium collected.
 
-### 📉 Stock Goes Down
-- Short call expires worthless → **Keep premium**
-- LEAP loses value → Partially offset by collected premium
-- **Result**: Loss cushioned by premium income
+### Stock Stays Flat
+
+Short call expires worthless → Keep all premium.
+LEAP maintains value → Minimal change.
+**Result:** Pure theta profit (ideal scenario!).
+
+### Stock Goes Down
+
+Short call expires worthless → Keep premium.
+LEAP loses value → Partially offset by collected premium.
+**Result:** Loss cushioned by premium income.
 
 ### Real Performance Examples
 
@@ -170,28 +211,36 @@ Think of yourself as an insurance underwriter, not a stock investor. You collect
 ## Quick Reference Card
 
 ### Entry Checklist
-- [ ] Weekly uptrend (21 > 50 > 200 EMA)
-- [ ] Daily RSI < 50 or reversing
-- [ ] Price at support level
-- [ ] Quality underlying (SPY, QQQ, AAPL, etc.)
-- [ ] LEAP: 70-90 delta, 180+ DTE
-- [ ] Short: ATM, ~7 DTE
 
-### Key Formulas
+Weekly uptrend confirmed (21 EMA above 50 EMA).
+Daily RSI below 50 or reversing.
+Price at or near support level.
+Quality underlying (SPY, QQQ, AAPL, etc.).
 
-**Income Velocity™**
-\`(Weekly Extrinsic / Capital) × 100\`
-Target: 1.5-2.5% per week
+### Ideal Setup Parameters
 
-**Weeks to Breakeven**
-\`LEAP Cost / Weekly Extrinsic\`
-Example: $14,300 / $485 = 29.5 weeks
+**Long Call:** 80Δ, 180+ DTE, Deep ITM strike.
+**Short Call:** ATM, 7 DTE, Maximum extrinsic.
 
-### Risk Rules
-- **Max position size**: 10-20% of trading capital
-- **Emergency exit**: -30% net loss
-- **Profit target**: +50% total return
-- **LEAP minimum**: 60 DTE remaining
+### Management Rules
+
+**Roll short when:** Extrinsic less than 20% remaining.
+**Take profit at:** 50%+ total gain.
+**Emergency exit at:** 30% net loss.
+**Roll LEAP when:** DTE falls below 60.
+
+### Greeks to Monitor
+
+**Positive Theta:** Time is your friend.
+**Positive Delta:** You profit when stock rises.
+**Negative Vega:** IV drop helps (usually).
+
+### Common Mistakes to Avoid
+
+Selling short calls too far OTM (leaving premium on the table).
+Ignoring the LEAP theta as it ages.
+Not rolling when extrinsic is exhausted.
+Averaging down on a losing position.
         `,
       },
     ],
@@ -199,15 +248,15 @@ Example: $14,300 / $485 = 29.5 weeks
   '112-trade': {
     name: '112 Trade',
     icon: Target,
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-500/10',
-    borderColor: 'border-blue-500/30',
-    description: 'Put ratio spread for bearish/neutral income with defined risk',
+    color: 'text-amber-500',
+    bgColor: 'bg-amber-500/10',
+    borderColor: 'border-amber-500/30',
+    description: 'Defined risk put ratio spread for elevated IV environments',
     quickStats: [
-      { label: 'Structure', value: '1:1:2', icon: Target },
-      { label: 'Ideal DTE', value: '14-17', icon: Clock },
-      { label: 'Risk Profile', value: 'Defined', icon: Shield },
-      { label: 'Best IV', value: '>35%', icon: BarChart3 },
+      { label: 'Market View', value: 'Neutral/Bullish', icon: Target },
+      { label: 'Ideal DTE', value: '14-21', icon: Clock },
+      { label: 'Ideal IV', value: '>35%', icon: BarChart3 },
+      { label: 'Risk', value: 'Defined', icon: Shield },
     ],
     sections: [
       {
@@ -215,35 +264,29 @@ Example: $14,300 / $485 = 29.5 weeks
         title: '1. What is the 112 Trade?',
         icon: BookOpen,
         content: `
-## The 112 Put Ratio Spread
+## The 112 Trade Structure
 
-The 112 Trade is a **defined-risk put ratio spread** that profits from time decay while providing downside protection.
+The 112 Trade is a put ratio spread consisting of:
 
-### Structure
-- **Buy 1** Put at higher strike (long protection)
-- **Sell 1** Put at middle strike (credit)
-- **Sell 2** Puts at lower strike (income)
+**1x Long Put** (ATM or slightly OTM).
+**1x Short Put** (lower strike, at first support).
+**2x Short Puts** (even lower, at major support).
 
-### Example Setup
-Stock at $100:
-- Buy 1x $100 Put
-- Sell 1x $95 Put  
-- Sell 2x $90 Puts
+### Why 1:1:2?
 
-### Why "112"?
-The name comes from the ratio: **1** long, **1** short, **2** short = 1:1:2
+This creates an asymmetric P&L profile. You profit if the stock stays flat, goes up, or drops to your short strikes. Maximum profit occurs at the middle short strike.
 
-### Profit Zones
-1. **Above long strike**: Small loss/gain from initial debit/credit
-2. **Between strikes**: Maximum profit zone
-3. **At short strikes**: Still profitable
-4. **Below short strikes**: Loss begins (but defined)
+### Ideal Conditions
 
-### Key Benefits
-- **Defined max loss** unlike naked puts
-- **Profits in flat/down markets** up to a point
-- **Lower margin** than selling naked puts
-- **IV expansion helps** if opened in low IV
+Enter when IV is elevated (above 35%).
+Clear support levels visible on the chart.
+No earnings or major events before expiration.
+
+### Risk Profile
+
+Max profit is achieved at the short put strikes.
+Limited risk above the long put.
+Increased risk if stock crashes through all strikes.
         `,
       },
       {
@@ -251,41 +294,30 @@ The name comes from the ratio: **1** long, **1** short, **2** short = 1:1:2
         title: '2. Setting Up the Trade',
         icon: Target,
         content: `
-## Trade Entry Criteria
+## Entry Criteria
 
-### Ideal Market Conditions
-- **Elevated IV**: >35% (more premium to collect)
-- **Neutral to slight bearish bias**
-- **Clear support level below** current price
-- **No major events** (earnings, FDA) before expiration
+### IV Requirements
+
+IV Rank should be above 35%.
+Higher IV means more premium collected.
+Avoid entering in low IV environments.
 
 ### Strike Selection
 
-**Long Put (Protection)**
-- ATM or slightly OTM
-- This is your hedge
-
-**First Short Put**
-- 5-10% below current price
-- At a technical support level
-
-**Two Short Puts (Income)**
-- Another 5-10% below first short
-- At stronger support level
-- These generate most of the credit
+**Long Put:** ATM or slightly OTM.
+**First Short Put:** At first support level (10-20 points below).
+**Second Short Puts (2x):** At major support (20-40 points below).
 
 ### DTE Selection
-- **Ideal**: 14-17 days
-- **Acceptable**: 10-21 days
-- Avoid: <10 (gamma risk) or >30 (ties up capital)
 
-### Example with Real Numbers
-Stock at $500:
-- Buy 1x $500P @ $8.00
-- Sell 1x $480P @ $4.50
-- Sell 2x $460P @ $2.50 each = $5.00
+Target 14-21 DTE.
+Allows theta decay while having time to manage.
+Avoid less than 14 DTE (gamma risk too high).
 
-**Net**: -$8.00 + $4.50 + $5.00 = **$1.50 credit**
+### Premium Targets
+
+Trade should be opened for a net credit or small debit.
+If paying debit, ensure max profit justifies the cost.
         `,
       },
       {
@@ -295,41 +327,32 @@ Stock at $500:
         content: `
 ## Managing the 112 Trade
 
-### Profit Target
-- Close at **50% of max profit**
-- Don't get greedy waiting for expiration
+### Profit Taking
 
-### Adjustment Triggers
+Close at 50% of max profit.
+Don't get greedy waiting for full profit.
 
-**Stock rallies strongly:**
-- Position becomes small loser
-- Consider closing for small loss
-- Or let expire if loss is acceptable
+### Defending the Position
 
-**Stock drops to short strike zone:**
-- This is your profit zone!
-- Let theta work, don't panic
+**If stock approaches first short strike:**
+Consider rolling the entire position down.
+Or close if support breaks.
 
-**Stock crashes through lower short strike:**
-- Close immediately if support breaks
-- Max loss is defined but painful
+**If stock crashes through strikes:**
+Close immediately if loss exceeds 3x initial credit.
+Do not hope for a bounce.
 
-### The Roll Decision
+### Rolling Rules
 
-**When to roll:**
-- 3-5 days left, stock near short strikes
-- Roll out in time for more credit
+Only roll for a credit.
+Roll to same structure at lower strikes.
+If unable to roll for credit, close the position.
 
-**When NOT to roll:**
-- Stock broken major support
-- Trend clearly changed
-- Better to close and reassess
+### Exit Triggers
 
-### Exit Rules
-- ✅ 50% profit reached → Close
-- ✅ Stock at max profit zone at expiration → Let expire
-- ❌ Stock crashes through support → Close for loss
-- ❌ 21+ DTE and position underwater → Manage or close
+50% profit achieved → Close.
+Major support broken → Close.
+Loss exceeds risk tolerance → Close.
         `,
       },
       {
@@ -340,11 +363,12 @@ Stock at $500:
 ## Profit & Loss Analysis
 
 ### Example Position
-- Current price: $500
-- Buy 1x $500P
-- Sell 1x $480P
-- Sell 2x $460P
-- Net credit: $1.50
+
+Current price: $500.
+Buy 1x $500P.
+Sell 1x $480P.
+Sell 2x $460P.
+Net credit: $1.50.
 
 ### At Expiration
 
@@ -359,17 +383,10 @@ Stock at $500:
 | $440 | -$18.50 | Significant loss |
 | $420 | -$58.50 | Near max loss |
 
-### Max Profit Calculation
-\`Width of spread + Credit received\`
-= $20 + $1.50 = **$21.50/share**
+### Key Levels
 
-### Max Loss Calculation
-\`(Lower short strike × 2) - Middle short - Long strike + Premium\`
-Only reached if stock goes to $0 (unrealistic)
-
-### Break-even Points
-- Upper: Long strike + credit = $501.50
-- Lower: Depends on spread widths
+**Max Profit:** Width of spread + Credit = $20 + $1.50 = $21.50/share.
+**Break-even Points:** Depend on spread widths and credit received.
         `,
       },
       {
@@ -380,37 +397,37 @@ Only reached if stock goes to $0 (unrealistic)
 ## 112 Trade Quick Reference
 
 ### Entry Checklist
-- [ ] IV > 35% (elevated)
-- [ ] 14-17 DTE
-- [ ] Clear support levels identified
-- [ ] No earnings before expiration
-- [ ] Net credit or small debit
+
+IV above 35% (elevated).
+14-17 DTE target.
+Clear support levels identified.
+No earnings before expiration.
+Net credit or small debit.
 
 ### Structure Rules
-- Long put: ATM or slightly OTM
-- Short puts: At support levels
-- Ratio always 1:1:2
-- Same expiration for all legs
+
+Long put: ATM or slightly OTM.
+Short puts: At support levels.
+Ratio always 1:1:2.
+Same expiration for all legs.
 
 ### Management Rules
 
-**Take Profit:**
-- 50% of max profit → Close
-
-**Stop Loss:**
-- Stock breaks major support → Close
-- Loss > initial credit × 3 → Close
+**Take Profit:** 50% of max profit.
+**Stop Loss:** Stock breaks major support, or loss exceeds 3x initial credit.
 
 ### Greeks to Watch
-- **Theta**: Should be positive (time helps you)
-- **Delta**: Starts near zero, goes negative as stock drops
-- **Vega**: Positive exposure to IV
+
+**Theta:** Should be positive (time helps you).
+**Delta:** Starts near zero, goes negative as stock drops.
+**Vega:** Positive exposure to IV.
 
 ### Common Mistakes
-❌ Opening in low IV
-❌ Too wide between strikes
-❌ Holding through earnings
-❌ Not respecting support breaks
+
+Opening in low IV.
+Strikes too wide apart.
+Holding through earnings.
+Not respecting support breaks.
         `,
       },
     ],
@@ -436,33 +453,25 @@ Only reached if stock goes to $0 (unrealistic)
         content: `
 ## The Short Strangle
 
-A short strangle involves **selling both an OTM put and an OTM call** to collect premium from both sides.
+A short strangle involves selling both an OTM put and an OTM call to collect premium from both sides.
 
 ### Structure
-- **Sell 1** OTM Call (above current price)
-- **Sell 1** OTM Put (below current price)
-- Same expiration, different strikes
 
-### Example Setup
-Stock at $100:
-- Sell 1x $105 Call @ $2.00
-- Sell 1x $95 Put @ $2.00
-- **Total credit**: $4.00
+**Short Call:** Above current price (resistance level).
+**Short Put:** Below current price (support level).
+Both same expiration, typically 30-45 DTE.
 
-### The Thesis
-You're betting the stock will stay **between your strikes** until expiration. As long as it does, you keep all the premium.
+### Why It Works
 
-### Why Trade Strangles?
-1. **Double premium** compared to single-leg selling
-2. **Wide profit range** when strikes are far apart
-3. **Benefits from IV crush** after events
-4. **Theta decay from both sides**
+You profit if the stock stays within a range.
+Time decay works in your favor on both sides.
+Premium collected on both legs.
 
-### The Risks
-⚠️ **Undefined risk** on both sides
-⚠️ **Large moves** in either direction hurt
-⚠️ **Assignment risk** if ITM at expiration
-⚠️ **Margin intensive** in regular accounts
+### Risk Profile
+
+**Undefined risk** on both sides.
+Profit limited to premium collected.
+Loss can be substantial if stock makes big move.
         `,
       },
       {
@@ -472,38 +481,26 @@ You're betting the stock will stay **between your strikes** until expiration. As
         content: `
 ## Entry Criteria
 
-### Ideal Market Conditions
-- **High IV Rank**: >30% (more premium)
-- **Range-bound price action** (no clear trend)
-- **Neutral RSI**: 40-60
-- **Post-earnings** (IV crush opportunity)
-- **Stable sector** (no major catalysts)
+### IV Requirements
+
+IV Rank above 30% (higher is better).
+Elevated IV means more premium.
 
 ### Strike Selection
 
-**Short Call (Upper bound)**
-- 15-30 delta (15-30% chance of being ITM)
-- Above resistance levels
-- ~1 standard deviation OTM
-
-**Short Put (Lower bound)**
-- 15-30 delta
-- Below support levels
-- ~1 standard deviation OTM
+**Short Call:** At or above resistance (16-20 delta).
+**Short Put:** At or below support (16-20 delta).
+Use technical levels for strike placement.
 
 ### DTE Selection
-- **Ideal**: 30-45 days
-- Sweet spot for theta decay
-- Time to adjust if needed
 
-### Position Sizing
-- Use only **2-5% of portfolio** per strangle
-- Account for potential 2-3x losses
-- Must be able to manage/roll
+30-45 DTE is optimal.
+Balances theta decay with adjustment time.
 
 ### Premium Targets
-- Collect at least **1% of underlying price**
-- Example: $500 stock → collect $5+ total
+
+Collect enough premium to justify the risk.
+Minimum 2% of buying power requirement.
         `,
       },
       {
@@ -514,43 +511,35 @@ You're betting the stock will stay **between your strikes** until expiration. As
 ## Managing Strangles
 
 ### Profit Taking
-- Close at **50% profit** (don't get greedy)
-- Or **21 DTE** whichever comes first
-- Gamma risk increases near expiration
+
+Close at 50% profit (don't get greedy).
+Or at 21 DTE whichever comes first.
+Gamma risk increases near expiration.
 
 ### Defending the Tested Side
 
 **Call side tested (stock rallies):**
-- Roll call up and out for credit
-- Or roll entire strangle up
-- Consider closing if trend changes
+Roll call up and out for credit.
+Or roll entire strangle up.
+Consider closing if trend changes.
 
 **Put side tested (stock drops):**
-- Roll put down and out for credit
-- Or roll entire strangle down
-- Close if support breaks
+Roll put down and out for credit.
+Or roll entire strangle down.
+Close if support breaks.
 
 ### The "Inversion" Problem
-When stock moves so much that strikes cross:
-- Your 95/105 strangle becomes a "straddle"
-- Losses accelerate
-- May need to close or aggressively roll
 
-### Adjustment Strategies
-
-**Rolling for credit:**
-- Only roll if you receive credit
-- Extend duration (more time = more extrinsic)
-- Move strike away from price
-
-**Closing one side:**
-- If one side is worthless, close it
-- Reduces risk, locks in partial profit
+When stock moves so much that strikes cross.
+Your strangle becomes a "straddle".
+Losses accelerate.
+May need to close or aggressively roll.
 
 ### Never Do This
-❌ Let strangle go to expiration ITM
-❌ Roll for a debit
-❌ Average down on a losing strangle
+
+Let strangle go to expiration ITM.
+Roll for a debit.
+Average down on a losing strangle.
         `,
       },
       {
@@ -561,10 +550,11 @@ When stock moves so much that strikes cross:
 ## Profit & Loss Analysis
 
 ### Example Position
-- Stock at $100
-- Sell $105 Call @ $2.00
-- Sell $95 Put @ $2.00
-- Credit: $4.00
+
+Stock at $100.
+Sell $105 Call @ $2.00.
+Sell $95 Put @ $2.00.
+Credit: $4.00.
 
 ### At Expiration
 
@@ -578,19 +568,11 @@ When stock moves so much that strikes cross:
 | $90 | +$2.00 | -$3.00 | -$1.00 |
 | $85 | +$2.00 | -$8.00 | -$6.00 |
 
-### Break-even Points
-- Upper: $105 + $4 = **$109**
-- Lower: $95 - $4 = **$91**
+### Key Levels
 
-### Profit Zone
-Stock can move **±9%** and still profit
-(From $91 to $109)
-
-### Greeks Profile
-- **Delta**: Near zero (neutral)
-- **Theta**: Positive (time helps)
-- **Vega**: Negative (IV drop helps)
-- **Gamma**: Negative (bad as stock moves)
+**Upper Break-even:** $105 + $4 = $109.
+**Lower Break-even:** $95 - $4 = $91.
+**Profit Zone:** Stock can move ±9% and still profit.
         `,
       },
       {
@@ -601,95 +583,87 @@ Stock can move **±9%** and still profit
 ## Strangle Quick Reference
 
 ### Entry Checklist
-- [ ] IV Rank > 30%
-- [ ] RSI 40-60 (neutral)
-- [ ] 30-45 DTE
-- [ ] No earnings/events in period
-- [ ] Both strikes at support/resistance
 
-### Strike Guidelines
-- Call: 15-30 delta, above resistance
-- Put: 15-30 delta, below support
-- Roughly equal deltas = neutral bias
+IV Rank above 30%.
+Neutral RSI (40-60).
+30-45 DTE.
+Clear support and resistance levels.
+
+### Strike Selection
+
+16-20 delta on each side.
+Place at technical levels.
 
 ### Management Rules
 
-**Take Profit:**
-- 50% profit OR 21 DTE → Close
+**Take Profit:** 50% of max profit.
+**Time Stop:** Close at 21 DTE.
+**Tested:** Roll the tested side.
 
-**Tested Side:**
-- Roll away for credit if possible
-- Close if can't roll for credit
+### Greeks Profile
 
-**Both sides threatened:**
-- Close position
-- Do not hold through extreme moves
+**Delta:** Near zero (neutral).
+**Theta:** Positive (time helps).
+**Vega:** Negative (IV drop helps).
+**Gamma:** Negative (bad as stock moves).
 
-### Position Sizing
-- Max 2-5% of portfolio per strangle
-- Account for undefined risk
-- Be able to withstand 2-3x loss
+### Common Mistakes
 
-### Best Underlyings
-- High-liquidity: SPY, QQQ, IWM
-- Non-directional: Range-bound stocks
-- Post-earnings: IV crush plays
+Not taking profit early.
+Holding through big moves.
+Wrong position sizing.
+Ignoring IV crush.
         `,
       },
     ],
   },
   'credit-spreads': {
     name: 'Credit Spreads',
-    icon: ArrowDownUp,
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500/10',
-    borderColor: 'border-orange-500/30',
-    description: 'Defined-risk directional premium selling strategy',
+    icon: DollarSign,
+    color: 'text-cyan-500',
+    bgColor: 'bg-cyan-500/10',
+    borderColor: 'border-cyan-500/30',
+    description: 'Defined risk directional trades collecting premium',
     quickStats: [
-      { label: 'Risk', value: 'Defined', icon: Shield },
+      { label: 'Market View', value: 'Directional', icon: TrendingUp },
       { label: 'Ideal DTE', value: '30-45', icon: Clock },
-      { label: 'Win Rate', value: '65-80%', icon: Target },
-      { label: 'Reward:Risk', value: '1:2-3', icon: BarChart3 },
+      { label: 'Win Rate', value: '60-70%', icon: Target },
+      { label: 'Risk', value: 'Defined', icon: Shield },
     ],
     sections: [
       {
         id: 'what-is',
-        title: '1. What are Credit Spreads?',
+        title: '1. What is a Credit Spread?',
         icon: BookOpen,
         content: `
 ## Credit Spreads Explained
 
-A credit spread involves **selling one option and buying another** at a different strike to create a defined-risk position.
+A credit spread is a vertical options strategy where you sell an option and buy a further OTM option for protection.
 
 ### Two Types
 
-**Bull Put Spread (Bullish)**
-- Sell higher strike put
-- Buy lower strike put
-- Profit if stock stays above short strike
+**Bull Put Spread (Bullish):**
+Sell put at higher strike.
+Buy put at lower strike.
+Profit if stock stays above short strike.
 
-**Bear Call Spread (Bearish)**
-- Sell lower strike call
-- Buy higher strike call
-- Profit if stock stays below short strike
+**Bear Call Spread (Bearish):**
+Sell call at lower strike.
+Buy call at higher strike.
+Profit if stock stays below short strike.
 
-### Example: Bull Put Spread
-Stock at $100:
-- Sell $95 Put @ $2.00
-- Buy $90 Put @ $0.50
-- **Net credit**: $1.50
-- **Max risk**: $5.00 - $1.50 = $3.50
+### Why Use Credit Spreads?
 
-### Why Trade Credit Spreads?
-1. **Defined max loss** (width - credit)
-2. **Lower margin** than naked options
-3. **High probability** when sold OTM
-4. **Time decay** works for you
+Defined max loss (width minus credit).
+Lower margin than naked options.
+High probability when sold OTM.
+Time decay works for you.
 
 ### The Trade-off
-- Lower profit potential than naked selling
-- But much safer with defined risk
-- Better risk-adjusted returns long-term
+
+Lower profit potential than naked selling.
+But much safer with defined risk.
+Better risk-adjusted returns long-term.
         `,
       },
       {
@@ -701,42 +675,33 @@ Stock at $100:
 
 ### Bull Put Spread (Bullish)
 
-**When to use:**
-- Bullish or neutral outlook
-- Expect stock to stay above a level
-- Support below current price
-
-**Strike Selection:**
-- Short put: At or below support
-- Long put: 5-10 points lower
-- Delta: 20-35 on short strike
+**When to use:** Bullish or neutral outlook, expect stock to stay above a level.
+**Strike Selection:** Short put at or below support, long put 5-10 points lower.
+**Delta:** 20-35 on short strike.
 
 ### Bear Call Spread (Bearish)
 
-**When to use:**
-- Bearish or neutral outlook
-- Expect stock to stay below a level
-- Resistance above current price
-
-**Strike Selection:**
-- Short call: At or above resistance
-- Long call: 5-10 points higher
-- Delta: 20-35 on short strike
+**When to use:** Bearish or neutral outlook, expect stock to stay below a level.
+**Strike Selection:** Short call at or above resistance, long call 5-10 points higher.
+**Delta:** 20-35 on short strike.
 
 ### DTE Selection
-- **Ideal**: 30-45 days
-- Balances theta decay with adjustment time
-- Avoid <14 DTE (gamma risk)
+
+Ideal: 30-45 days.
+Balances theta decay with adjustment time.
+Avoid less than 14 DTE (gamma risk).
 
 ### Width Selection
-- **Narrow** ($5): Lower risk, lower reward
-- **Medium** ($10): Balanced
-- **Wide** ($20+): Higher reward, higher risk
+
+Narrow ($5): Lower risk, lower reward.
+Medium ($10): Balanced approach.
+Wide ($20+): Higher reward, higher risk.
 
 ### Premium Targets
-- Collect **⅓ of spread width** minimum
-- $5 wide spread → collect at least $1.50
-- $10 wide spread → collect at least $3.00
+
+Collect minimum 1/3 of spread width.
+$5 wide spread → collect at least $1.50.
+$10 wide spread → collect at least $3.00.
         `,
       },
       {
@@ -747,44 +712,35 @@ Stock at $100:
 ## Managing Credit Spreads
 
 ### Profit Taking
-- Close at **50% of max profit**
-- Example: Collected $1.50 → Close at $0.75
-- Don't hold to expiration for extra pennies
+
+Close at 50% of max profit.
+Example: Collected $1.50 → Close at $0.75.
+Don't hold to expiration for extra pennies.
 
 ### Defending the Position
 
 **Short strike tested:**
-- Roll entire spread further OTM
-- Roll out in time for more credit
-- Close if conviction gone
+Roll entire spread further OTM.
+Roll out in time for more credit.
+Close if conviction gone.
 
 **Max loss approached:**
-- Close immediately
-- Don't hope for reversal
-- Accept the loss and move on
+Close immediately.
+Don't hope for reversal.
+Accept the loss and move on.
 
 ### Rolling Rules
 
-**Roll for credit only:**
-- Must receive net credit to roll
-- Extends duration, moves strikes
-
-**Roll timing:**
-- When short strike breached
-- 21 DTE if still under pressure
-- Not worth rolling if too deep ITM
+**Roll for credit only:** Must receive net credit to roll.
+**Roll timing:** When short strike breached or at 21 DTE if still under pressure.
+**Not worth rolling:** If too deep ITM.
 
 ### The "Close at 21 DTE" Rule
-Even if profitable, close at 21 DTE:
-- Gamma accelerates
-- Risk/reward becomes unfavorable
-- Open new position if still bullish/bearish
 
-### Exit Triggers
-✅ 50% profit → Close
-✅ 21 DTE → Close regardless
-❌ Short strike breached → Roll or close
-❌ Max loss hit → Close immediately
+Even if profitable, close at 21 DTE.
+Gamma accelerates.
+Risk/reward becomes unfavorable.
+Open new position if still bullish/bearish.
         `,
       },
       {
@@ -795,11 +751,12 @@ Even if profitable, close at 21 DTE:
 ## Profit & Loss Analysis
 
 ### Example: Bull Put Spread
-- Stock at $100
-- Sell $95 Put @ $2.00
-- Buy $90 Put @ $0.50
-- Credit: $1.50
-- Width: $5.00
+
+Stock at $100.
+Sell $95 Put @ $2.00.
+Buy $90 Put @ $0.50.
+Credit: $1.50.
+Width: $5.00.
 
 ### At Expiration
 
@@ -815,20 +772,15 @@ Even if profitable, close at 21 DTE:
 | $90 | -$3.50 | -100% (max loss) |
 
 ### Key Levels
-- **Max Profit**: $1.50 (above $95)
-- **Break-even**: $93.50 ($95 - $1.50)
-- **Max Loss**: $3.50 (below $90)
 
-### Probability Analysis
-If short strike at 30 delta:
-- ~70% chance of max profit
-- But risk/reward is 1:2.3
+**Max Profit:** $1.50 (above $95).
+**Break-even:** $93.50 ($95 - $1.50).
+**Max Loss:** $3.50 (below $90).
 
 ### Risk/Reward Calculation
-\`Credit / (Width - Credit)\`
-$1.50 / $3.50 = **0.43:1** reward-to-risk
 
-This is typical! You win more often but win less.
+Credit / (Width - Credit) = $1.50 / $3.50 = 0.43:1 reward-to-risk.
+This is typical! You win more often but win less per trade.
         `,
       },
       {
@@ -839,99 +791,99 @@ This is typical! You win more often but win less.
 ## Credit Spread Quick Reference
 
 ### Entry Checklist
-- [ ] Clear directional bias
-- [ ] 30-45 DTE
-- [ ] Short strike at support/resistance
-- [ ] Credit ≥ ⅓ of width
-- [ ] IV not too low
+
+Clear directional bias.
+30-45 DTE.
+Short strike at support/resistance.
+Credit at least 1/3 of width.
+IV not too low.
 
 ### Bull Put Spread
-- Bias: Bullish/neutral
-- Sell put at/below support
-- Buy put lower for protection
+
+Bias: Bullish/neutral.
+Sell put at/below support.
+Buy put lower for protection.
 
 ### Bear Call Spread
-- Bias: Bearish/neutral
-- Sell call at/above resistance
-- Buy call higher for protection
+
+Bias: Bearish/neutral.
+Sell call at/above resistance.
+Buy call higher for protection.
 
 ### Management Rules
 
-**Take Profit:**
-- 50% profit → Close
-
-**Time-Based:**
-- 21 DTE → Close regardless
-
-**Tested:**
-- Short strike breached → Roll or close
+**Take Profit:** 50% profit → Close.
+**Time-Based:** 21 DTE → Close regardless.
+**Tested:** Short strike breached → Roll or close.
 
 ### Position Sizing
-- Risk 1-2% of portfolio per spread
-- Account for full loss possibility
-- Max 5-10 spreads simultaneously
+
+Risk 1-2% of portfolio per spread.
+Account for full loss possibility.
+Max 5-10 spreads simultaneously.
 
 ### Common Mistakes
-❌ Too tight stops (whipsawed out)
-❌ Holding to expiration for pennies
-❌ Fighting the trend
-❌ Over-leveraging
+
+Too tight stops (whipsawed out).
+Holding to expiration for pennies.
+Fighting the trend.
+Over-leveraging.
         `,
       },
     ],
   },
 };
 
-// Guide section component
 function GuideSection({ 
   section, 
   isOpen, 
   onToggle,
   color 
 }: { 
-  section: { id: string; title: string; icon: any; content: string };
+  section: Section;
   isOpen: boolean; 
   onToggle: () => void;
   color: string;
 }) {
   const Icon = section.icon;
   
-  // Simple markdown to HTML conversion
   const renderContent = (content: string) => {
     return content
       .replace(/^## (.*$)/gm, '<h2 class="text-xl font-semibold text-[var(--text-primary)] mt-6 mb-3 first:mt-0">$1</h2>')
-      .replace(/^### (.*$)/gm, '<h3 class="text-lg font-medium text-[var(--text-primary)] mt-4 mb-2">$1</h3>')
+      .replace(/^### (.*$)/gm, '<h3 class="text-lg font-medium text-[var(--text-primary)] mt-5 mb-2">$1</h3>')
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-[var(--text-primary)]">$1</strong>')
       .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 bg-[var(--surface)] rounded text-sm font-mono text-[var(--info)]">$1</code>')
       .replace(/^> (.*$)/gm, '<blockquote class="border-l-4 border-[var(--info)] pl-4 italic my-4 text-[var(--text-secondary)]">$1</blockquote>')
-      .replace(/^- \[ \] (.*$)/gm, '<div class="flex items-center gap-2 ml-4"><input type="checkbox" disabled class="rounded" /><span>$1</span></div>')
-      .replace(/^- (.*$)/gm, '<li class="ml-4 text-[var(--text-secondary)]">• $1</li>')
-      .replace(/^(\d+)\. (.*$)/gm, '<li class="ml-4 text-[var(--text-secondary)]">$1. $2</li>')
-      .replace(/^(✅|❌|⚠️|🔴|🟡|📈|📊|📉|💥) (.*$)/gm, '<div class="ml-4 text-[var(--text-secondary)]">$1 $2</div>')
-      .replace(/\|(.+)\|/g, (match) => {
+      .replace(/\| (.*) \|/g, (match) => {
         const cells = match.split('|').filter(c => c.trim());
-        if (cells.some(c => c.includes('---'))) return '';
-        const isHeader = match.includes('Stock') || match.includes('Aspect') || match.includes('Ticker');
-        const tag = isHeader ? 'th' : 'td';
-        const className = isHeader ? 'text-left p-2 border-b border-[var(--border)] font-medium' : 'p-2 border-b border-[var(--border)] text-[var(--text-secondary)]';
-        return `<tr>${cells.map(c => `<${tag} class="${className}">${c.trim()}</${tag}>`).join('')}</tr>`;
+        const isHeader = cells.some(c => c.includes('---'));
+        if (isHeader) return '';
+        const cellClass = 'px-3 py-2 border border-[var(--border)]';
+        return `<tr>${cells.map(c => `<td class="${cellClass}">${c.trim()}</td>`).join('')}</tr>`;
       })
-      .replace(/<tr>/g, '<table class="w-full text-sm my-4"><tbody><tr>')
-      .replace(/<\/tr>(?![\s\S]*<tr>)/g, '</tr></tbody></table>')
-      .replace(/\n\n/g, '<br/><br/>');
+      .replace(/(<tr>.*<\/tr>\n?)+/g, (match) => {
+        return `<table class="w-full border-collapse my-4 text-sm"><tbody>${match}</tbody></table>`;
+      })
+      .replace(/^\n/gm, '<div class="h-3"></div>')
+      .split('\n')
+      .map(line => {
+        if (line.startsWith('<') || line.trim() === '') return line;
+        return `<p class="text-[var(--text-secondary)] leading-relaxed mb-2">${line}</p>`;
+      })
+      .join('');
   };
   
   return (
     <div className="card overflow-hidden">
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between p-4 hover:bg-[var(--surface)]/50 transition-colors"
+        className="w-full flex items-center justify-between p-4 hover:bg-[var(--surface)] transition-colors"
       >
         <div className="flex items-center gap-3">
-          <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", color.replace('text-', 'bg-') + '/10')}>
-            <Icon className={cn("w-5 h-5", color)} />
+          <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", `${color.replace('text-', 'bg-')}/20`)}>
+            <Icon className={cn("w-4 h-4", color)} />
           </div>
-          <span className="font-semibold text-[var(--text-primary)]">{section.title}</span>
+          <span className="font-medium text-[var(--text-primary)]">{section.title}</span>
         </div>
         {isOpen ? (
           <ChevronDown className="w-5 h-5 text-[var(--text-secondary)]" />
@@ -943,7 +895,7 @@ function GuideSection({
       {isOpen && (
         <div className="px-6 pb-6 border-t border-[var(--border)]">
           <div 
-            className="prose prose-invert max-w-none mt-4 text-[var(--text-secondary)]"
+            className="prose prose-invert max-w-none mt-4"
             dangerouslySetInnerHTML={{ __html: renderContent(section.content) }}
           />
         </div>
@@ -978,14 +930,13 @@ export default function GuidePage() {
     setOpenSections(new Set());
   };
 
-  // Reset open sections when strategy changes
   const handleStrategyChange = (newStrategy: StrategyType) => {
     setActiveStrategy(newStrategy);
     setOpenSections(new Set(['what-is']));
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto p-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Strategy Guide</h1>
@@ -996,7 +947,7 @@ export default function GuidePage() {
 
       {/* Strategy Selector */}
       <div className="flex flex-wrap gap-2">
-        {(Object.entries(STRATEGIES) as [StrategyType, typeof STRATEGIES[StrategyType]][]).map(([key, strat]) => {
+        {(Object.entries(STRATEGIES) as [StrategyType, Strategy][]).map(([key, strat]) => {
           const Icon = strat.icon;
           const isActive = activeStrategy === key;
           return (
@@ -1076,8 +1027,8 @@ export default function GuidePage() {
             <p className="text-sm text-[var(--text-secondary)] mt-1">
               {activeStrategy === 'ipmcc' && "The key to success with IPMCC is consistency. Collect premium week after week, regardless of market direction."}
               {activeStrategy === '112-trade' && "Only enter 112 trades when IV is elevated. In low IV environments, the risk/reward is unfavorable."}
-              {activeStrategy === 'strangles' && "Always have an exit plan before entering. Know your roll points and max loss limits ahead of time."}
-              {activeStrategy === 'credit-spreads' && "Take profits at 50% - the extra 50% isn't worth the gamma risk as expiration approaches."}
+              {activeStrategy === 'strangles' && "Position sizing is everything with strangles. Never risk more than 2-3% of your account on any single strangle."}
+              {activeStrategy === 'credit-spreads' && "Focus on high-probability setups with credit spreads. A 70% win rate with proper position sizing beats chasing home runs."}
             </p>
           </div>
         </div>

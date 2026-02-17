@@ -1,286 +1,216 @@
 """
-IPMCC Commander - Caching Service
-In-memory cache with TTL for API data to avoid hammering external APIs
+IPMCC Commander - Cache Service
+Simple in-memory cache with TTL support
 """
 
-import asyncio
 import time
-from datetime import datetime
-from typing import Dict, Any, Optional, Callable, Awaitable
-from functools import wraps
 import logging
-import hashlib
-import json
+import functools
+from typing import Any, Optional, Dict, Callable
+from threading import Lock
 
 logger = logging.getLogger(__name__)
 
 
-class CacheEntry:
-    """Single cache entry with expiration."""
-    
-    def __init__(self, value: Any, ttl_seconds: int):
-        self.value = value
-        self.created_at = time.time()
-        self.expires_at = self.created_at + ttl_seconds
-        self.hits = 0
-    
-    def is_expired(self) -> bool:
-        return time.time() > self.expires_at
-    
-    def get(self) -> Any:
-        self.hits += 1
-        return self.value
-    
-    def remaining_ttl(self) -> float:
-        return max(0, self.expires_at - time.time())
-
-
 class CacheService:
     """
-    In-memory cache service with TTL support.
-    
-    Features:
-    - TTL-based expiration
-    - Automatic cleanup of expired entries
-    - Cache statistics
-    - Namespace support for different data types
-    
-    Default TTLs:
-    - Option chains: 60 seconds (Greeks change frequently)
-    - Stock quotes: 30 seconds
-    - Account data: 120 seconds
-    - Sentiment data: 300 seconds (5 min)
-    - Scanner results: 300 seconds
+    Simple in-memory cache with TTL (time-to-live) support.
+    Thread-safe implementation.
     """
     
-    # Default TTLs in seconds
-    DEFAULT_TTLS = {
-        "option_chain": 60,
-        "quote": 30,
-        "quotes": 30,
-        "account": 120,
-        "positions": 120,
-        "sentiment": 300,
-        "scanner": 300,
-        "calendar": 1800,  # 30 min
-        "price_history": 300,
-        "default": 60
-    }
+    def __init__(self):
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._lock = Lock()
     
-    def __init__(self, max_entries: int = 1000):
-        """
-        Initialize cache service.
-        
-        Args:
-            max_entries: Maximum number of entries before eviction
-        """
-        self._cache: Dict[str, CacheEntry] = {}
-        self._max_entries = max_entries
-        self._stats = {
-            "hits": 0,
-            "misses": 0,
-            "evictions": 0,
-            "expirations": 0
-        }
-        self._lock = asyncio.Lock()
-    
-    def _make_key(self, namespace: str, key: str) -> str:
-        """Create a cache key with namespace."""
-        return f"{namespace}:{key}"
-    
-    def _hash_params(self, params: Dict[str, Any]) -> str:
-        """Create a hash from parameters for cache key."""
-        sorted_str = json.dumps(params, sort_keys=True)
-        return hashlib.md5(sorted_str.encode()).hexdigest()[:12]
-    
-    async def get(self, namespace: str, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Optional[Any]:
         """
         Get a value from cache.
-        
-        Args:
-            namespace: Cache namespace (e.g., "option_chain", "quote")
-            key: Cache key within namespace
-            
-        Returns:
-            Cached value or None if not found/expired
+        Returns None if key doesn't exist or has expired.
         """
-        cache_key = self._make_key(namespace, key)
-        
-        async with self._lock:
-            entry = self._cache.get(cache_key)
-            
-            if entry is None:
-                self._stats["misses"] += 1
+        with self._lock:
+            if key not in self._cache:
                 return None
             
-            if entry.is_expired():
-                del self._cache[cache_key]
-                self._stats["expirations"] += 1
-                self._stats["misses"] += 1
+            entry = self._cache[key]
+            
+            # Check if expired
+            if entry.get("expires_at") and time.time() > entry["expires_at"]:
+                del self._cache[key]
                 return None
             
-            self._stats["hits"] += 1
-            return entry.get()
+            return entry.get("value")
     
-    async def set(
-        self, 
-        namespace: str, 
-        key: str, 
-        value: Any, 
-        ttl: Optional[int] = None
-    ) -> None:
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
         """
         Set a value in cache.
         
         Args:
-            namespace: Cache namespace
             key: Cache key
             value: Value to cache
-            ttl: TTL in seconds (uses default for namespace if not specified)
+            ttl: Time-to-live in seconds (None = no expiration)
         """
-        cache_key = self._make_key(namespace, key)
-        
-        if ttl is None:
-            ttl = self.DEFAULT_TTLS.get(namespace, self.DEFAULT_TTLS["default"])
-        
-        async with self._lock:
-            # Evict if at capacity
-            if len(self._cache) >= self._max_entries:
-                await self._evict_oldest()
+        with self._lock:
+            expires_at = None
+            if ttl:
+                expires_at = time.time() + ttl
             
-            self._cache[cache_key] = CacheEntry(value, ttl)
+            self._cache[key] = {
+                "value": value,
+                "created_at": time.time(),
+                "expires_at": expires_at
+            }
     
-    async def delete(self, namespace: str, key: str) -> bool:
-        """Delete a cache entry."""
-        cache_key = self._make_key(namespace, key)
-        
-        async with self._lock:
-            if cache_key in self._cache:
-                del self._cache[cache_key]
+    def delete(self, key: str) -> bool:
+        """
+        Delete a key from cache.
+        Returns True if key existed, False otherwise.
+        """
+        with self._lock:
+            if key in self._cache:
+                del self._cache[key]
                 return True
             return False
     
-    async def clear_namespace(self, namespace: str) -> int:
-        """Clear all entries in a namespace."""
-        prefix = f"{namespace}:"
-        count = 0
-        
-        async with self._lock:
-            keys_to_delete = [k for k in self._cache.keys() if k.startswith(prefix)]
-            for key in keys_to_delete:
-                del self._cache[key]
-                count += 1
-        
-        return count
-    
-    async def clear_all(self) -> int:
-        """Clear entire cache."""
-        async with self._lock:
-            count = len(self._cache)
+    def clear(self) -> None:
+        """Clear all entries from cache."""
+        with self._lock:
             self._cache.clear()
-            return count
     
-    async def _evict_oldest(self) -> None:
-        """Evict oldest entries when at capacity."""
-        if not self._cache:
-            return
+    def cleanup_expired(self) -> int:
+        """
+        Remove all expired entries.
+        Returns count of removed entries.
+        """
+        removed = 0
+        current_time = time.time()
         
-        # Find and remove oldest entry
-        oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k].created_at)
-        del self._cache[oldest_key]
-        self._stats["evictions"] += 1
-    
-    async def cleanup_expired(self) -> int:
-        """Remove all expired entries."""
-        count = 0
-        
-        async with self._lock:
-            expired_keys = [
-                k for k, v in self._cache.items() if v.is_expired()
-            ]
-            for key in expired_keys:
+        with self._lock:
+            keys_to_remove = []
+            for key, entry in self._cache.items():
+                if entry.get("expires_at") and current_time > entry["expires_at"]:
+                    keys_to_remove.append(key)
+            
+            for key in keys_to_remove:
                 del self._cache[key]
-                count += 1
+                removed += 1
         
-        self._stats["expirations"] += count
-        return count
+        if removed:
+            logger.debug(f"Cache cleanup: removed {removed} expired entries")
+        
+        return removed
     
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
-        total_requests = self._stats["hits"] + self._stats["misses"]
-        hit_rate = (self._stats["hits"] / total_requests * 100) if total_requests > 0 else 0
-        
-        return {
-            "entries": len(self._cache),
-            "max_entries": self._max_entries,
-            "hits": self._stats["hits"],
-            "misses": self._stats["misses"],
-            "hit_rate": round(hit_rate, 2),
-            "evictions": self._stats["evictions"],
-            "expirations": self._stats["expirations"]
-        }
+        with self._lock:
+            total = len(self._cache)
+            expired = 0
+            current_time = time.time()
+            
+            for entry in self._cache.values():
+                if entry.get("expires_at") and current_time > entry["expires_at"]:
+                    expired += 1
+            
+            return {
+                "total_entries": total,
+                "expired_entries": expired,
+                "active_entries": total - expired
+            }
     
-    def get_namespace_stats(self, namespace: str) -> Dict[str, Any]:
-        """Get stats for a specific namespace."""
-        prefix = f"{namespace}:"
-        entries = [
-            (k, v) for k, v in self._cache.items() if k.startswith(prefix)
-        ]
-        
-        return {
-            "namespace": namespace,
-            "entries": len(entries),
-            "default_ttl": self.DEFAULT_TTLS.get(namespace, self.DEFAULT_TTLS["default"]),
-            "oldest_entry_age": max((time.time() - v.created_at for _, v in entries), default=0),
-            "total_hits": sum(v.hits for _, v in entries)
-        }
+    def has(self, key: str) -> bool:
+        """Check if a key exists and is not expired."""
+        return self.get(key) is not None
 
 
-# Singleton instance
+# Singleton instance for backward compatibility
 cache_service = CacheService()
 
 
-def cached(namespace: str, key_func: Optional[Callable[..., str]] = None, ttl: Optional[int] = None):
+async def cache_cleanup_task(interval_seconds: int = 300):
     """
-    Decorator for caching async function results.
+    Background task to periodically clean up expired cache entries.
+    Run this with asyncio.create_task() in your app startup.
+    
+    Args:
+        interval_seconds: How often to run cleanup (default: 5 minutes)
+    
+    Usage in main.py:
+        @app.on_event("startup")
+        async def startup():
+            asyncio.create_task(cache_cleanup_task())
+    """
+    import asyncio
+    
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            removed = cache_service.cleanup_expired()
+            if removed > 0:
+                logger.info(f"Cache cleanup: removed {removed} expired entries")
+        except asyncio.CancelledError:
+            logger.info("Cache cleanup task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in cache cleanup task: {e}")
+
+
+def cached(ttl: int = 300, key_prefix: str = ""):
+    """
+    Decorator to cache function results.
+    
+    Args:
+        ttl: Time-to-live in seconds (default: 5 minutes)
+        key_prefix: Prefix for cache key
     
     Usage:
-        @cached("option_chain", key_func=lambda symbol: symbol)
-        async def get_option_chain(symbol: str):
+        @cached(ttl=600, key_prefix="quotes")
+        def get_quote(symbol: str):
             ...
     """
-    def decorator(func: Callable[..., Awaitable[Any]]):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            # Generate cache key
-            if key_func:
-                key = key_func(*args, **kwargs)
-            else:
-                # Default: hash all args
-                key = cache_service._hash_params({"args": args, "kwargs": kwargs})
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            # Build cache key from function name and arguments
+            key_parts = [key_prefix or func.__name__]
+            key_parts.extend(str(arg) for arg in args)
+            key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
+            cache_key = ":".join(key_parts)
             
             # Check cache
-            cached_value = await cache_service.get(namespace, key)
+            cached_value = cache_service.get(cache_key)
             if cached_value is not None:
-                logger.debug(f"Cache hit: {namespace}:{key}")
+                logger.debug(f"Cache hit: {cache_key}")
+                return cached_value
+            
+            # Call function and cache result
+            result = func(*args, **kwargs)
+            cache_service.set(cache_key, result, ttl=ttl)
+            logger.debug(f"Cache set: {cache_key}")
+            return result
+        
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            # Build cache key from function name and arguments
+            key_parts = [key_prefix or func.__name__]
+            key_parts.extend(str(arg) for arg in args)
+            key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
+            cache_key = ":".join(key_parts)
+            
+            # Check cache
+            cached_value = cache_service.get(cache_key)
+            if cached_value is not None:
+                logger.debug(f"Cache hit: {cache_key}")
                 return cached_value
             
             # Call function and cache result
             result = await func(*args, **kwargs)
-            await cache_service.set(namespace, key, result, ttl)
-            logger.debug(f"Cache miss, stored: {namespace}:{key}")
-            
+            cache_service.set(cache_key, result, ttl=ttl)
+            logger.debug(f"Cache set: {cache_key}")
             return result
         
-        return wrapper
+        # Return appropriate wrapper based on function type
+        import asyncio
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+    
     return decorator
-
-
-# Background task to periodically cleanup expired entries
-async def cache_cleanup_task(interval_seconds: int = 60):
-    """Background task to clean up expired cache entries."""
-    while True:
-        await asyncio.sleep(interval_seconds)
-        count = await cache_service.cleanup_expired()
-        if count > 0:
-            logger.info(f"Cache cleanup: removed {count} expired entries")

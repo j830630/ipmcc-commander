@@ -1,13 +1,16 @@
 """
 IPMCC Commander - Trade Recording Router
 Endpoints for recording and managing trade history
+FIXED: Async SQLAlchemy 2.0 syntax
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from app.database import get_db
 from app.models.history import TradeHistory
@@ -31,10 +34,23 @@ class TradeRecordCreate(BaseModel):
     delta: Optional[float] = None
     theta: Optional[float] = None
     iv: Optional[float] = None
-    strategy: str = Field(default="ipmcc")
+    # Strategy field - supports all strategies
+    strategy: str = Field(
+        default="ipmcc", 
+        description="Strategy: ipmcc, 112, strangle, 0dte_vertical, 0dte_butterfly, 0dte_condor, other"
+    )
+    # Strategy category for filtering
+    strategy_category: str = Field(
+        default="swing",
+        description="Category: swing (IPMCC/112/Strangle) or 0dte (The Desk)"
+    )
     notes: Optional[str] = None
     position_id: Optional[str] = None
     cycle_id: Optional[str] = None
+    # Additional fields for comprehensive logging
+    signal_confidence: Optional[int] = Field(None, ge=0, le=100, description="Signal confidence at entry")
+    regime: Optional[str] = Field(None, description="Market regime at entry (for 0-DTE)")
+    followed_rules: Optional[bool] = Field(None, description="Did trade follow The Desk / strategy rules?")
 
 
 class TradeRecordResponse(BaseModel):
@@ -59,7 +75,7 @@ class TradeRecordResponse(BaseModel):
 @router.post("/trades", response_model=TradeRecordResponse)
 async def record_trade(
     trade: TradeRecordCreate,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Record a new trade."""
     # Calculate total value (price * quantity * 100 for options)
@@ -99,8 +115,8 @@ async def record_trade(
     )
     
     db.add(trade_record)
-    db.commit()
-    db.refresh(trade_record)
+    await db.commit()
+    await db.refresh(trade_record)
     
     return TradeRecordResponse(
         id=trade_record.id,
@@ -130,25 +146,34 @@ async def get_trades(
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get trade history with optional filters."""
-    query = db.query(TradeHistory)
+    # Build the query using SQLAlchemy 2.0 select()
+    stmt = select(TradeHistory)
     
     if ticker:
-        query = query.filter(TradeHistory.ticker == ticker.upper())
+        stmt = stmt.filter(TradeHistory.ticker == ticker.upper())
     if trade_type:
-        query = query.filter(TradeHistory.trade_type == trade_type)
+        stmt = stmt.filter(TradeHistory.trade_type == trade_type)
     if strategy:
-        query = query.filter(TradeHistory.strategy == strategy)
+        stmt = stmt.filter(TradeHistory.strategy == strategy)
     if start_date:
-        query = query.filter(TradeHistory.trade_date >= start_date)
+        stmt = stmt.filter(TradeHistory.trade_date >= start_date)
     if end_date:
-        query = query.filter(TradeHistory.trade_date <= end_date)
+        stmt = stmt.filter(TradeHistory.trade_date <= end_date)
     
-    total = query.count()
-    trades = query.order_by(TradeHistory.trade_date.desc(), TradeHistory.created_at.desc())\
-                  .offset(offset).limit(limit).all()
+    # Get total count
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+    
+    # Get paginated results
+    stmt = stmt.order_by(TradeHistory.trade_date.desc(), TradeHistory.created_at.desc())
+    stmt = stmt.offset(offset).limit(limit)
+    
+    result = await db.execute(stmt)
+    trades = result.scalars().all()
     
     return {
         "trades": [
@@ -179,9 +204,12 @@ async def get_trades(
 
 
 @router.get("/trades/{trade_id}")
-async def get_trade(trade_id: str, db: Session = Depends(get_db)):
+async def get_trade(trade_id: str, db: AsyncSession = Depends(get_db)):
     """Get a specific trade by ID."""
-    trade = db.query(TradeHistory).filter(TradeHistory.id == trade_id).first()
+    stmt = select(TradeHistory).filter(TradeHistory.id == trade_id)
+    result = await db.execute(stmt)
+    trade = result.scalar_one_or_none()
+    
     if not trade:
         raise HTTPException(status_code=404, detail="Trade not found")
     
@@ -212,14 +240,17 @@ async def get_trade(trade_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/trades/{trade_id}")
-async def delete_trade(trade_id: str, db: Session = Depends(get_db)):
+async def delete_trade(trade_id: str, db: AsyncSession = Depends(get_db)):
     """Delete a trade record."""
-    trade = db.query(TradeHistory).filter(TradeHistory.id == trade_id).first()
+    stmt = select(TradeHistory).filter(TradeHistory.id == trade_id)
+    result = await db.execute(stmt)
+    trade = result.scalar_one_or_none()
+    
     if not trade:
         raise HTTPException(status_code=404, detail="Trade not found")
     
-    db.delete(trade)
-    db.commit()
+    await db.delete(trade)
+    await db.commit()
     
     return {"status": "deleted", "trade_id": trade_id}
 
@@ -227,14 +258,14 @@ async def delete_trade(trade_id: str, db: Session = Depends(get_db)):
 @router.get("/trades/summary/recent")
 async def get_recent_trades_summary(
     days: int = Query(7, description="Number of days to look back"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get summary of recent trading activity."""
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     
-    trades = db.query(TradeHistory).filter(
-        TradeHistory.trade_date >= cutoff
-    ).all()
+    stmt = select(TradeHistory).filter(TradeHistory.trade_date >= cutoff)
+    result = await db.execute(stmt)
+    trades = result.scalars().all()
     
     total_credits = sum(t.total_value for t in trades if t.trade_type in ["open_short", "close_long"])
     total_debits = sum(t.total_value for t in trades if t.trade_type in ["open_long", "close_short"])
@@ -260,7 +291,3 @@ async def get_recent_trades_summary(
         "total_fees": total_fees,
         "by_ticker": by_ticker,
     }
-
-
-# Need to import timedelta
-from datetime import timedelta
