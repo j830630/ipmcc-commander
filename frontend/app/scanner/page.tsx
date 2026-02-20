@@ -5,27 +5,24 @@ import Link from 'next/link';
 import {
   Search, ArrowLeft, AlertTriangle, CheckCircle, XCircle, RefreshCw, 
   ChevronDown, ChevronUp, Target, Globe, Play, X, WifiOff, Clock,
-  Settings, Filter, Zap, Shield, TrendingUp, Minus, AlertCircle
+  Settings, Filter, Zap, Shield, TrendingUp, Minus, AlertCircle,
+  ExternalLink, ArrowRight, Info, DollarSign, Loader2
 } from 'lucide-react';
 
 // ============================================================================
-// TICKER UNIVERSE
+// TICKER UNIVERSE - v3.0: Reduced to 30 mega, 30 large, 20 ETF = 80 total
 // ============================================================================
 
 const TICKER_UNIVERSE = {
   megaCaps: [
-    'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AVGO', 'BRK.B', 'LLY',
-    'JPM', 'V', 'UNH', 'XOM', 'MA', 'JNJ', 'PG', 'COST', 'HD', 'ABBV',
-    'WMT', 'NFLX', 'CRM', 'BAC', 'CVX', 'KO', 'MRK', 'PEP', 'AMD', 'TMO',
-    'ADBE', 'ORCL', 'ACN', 'LIN', 'MCD', 'CSCO', 'ABT', 'DHR', 'INTC', 'QCOM',
-    'WFC', 'PM', 'DIS', 'VZ', 'INTU', 'IBM', 'CMCSA', 'NOW', 'GE', 'CAT'
+    'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AVGO', 'JPM', 'V',
+    'UNH', 'MA', 'JNJ', 'PG', 'COST', 'HD', 'ABBV', 'WMT', 'NFLX', 'CRM',
+    'BAC', 'CVX', 'KO', 'MRK', 'PEP', 'AMD', 'ADBE', 'ORCL', 'MCD', 'CSCO'
   ],
   largeCaps: [
     'UBER', 'SQ', 'SHOP', 'SNOW', 'PLTR', 'PANW', 'CRWD', 'DDOG', 'ZS', 'NET',
-    'COIN', 'RBLX', 'RIVN', 'LCID', 'ABNB', 'DASH', 'ROKU', 'HOOD', 'SOFI', 'AFRM',
-    'MELI', 'SE', 'BABA', 'JD', 'PDD', 'NIO', 'XPEV', 'LI', 'GRAB', 'BIDU',
-    'F', 'GM', 'TM', 'OXY', 'DVN', 'MPC', 'VLO', 'PSX', 'EOG', 'SLB',
-    'LMT', 'NOC', 'GD', 'BA', 'TDG', 'RTX', 'LHX', 'HWM', 'GS', 'MS'
+    'COIN', 'RBLX', 'RIVN', 'ABNB', 'DASH', 'ROKU', 'HOOD', 'SOFI', 'AFRM', 'MELI',
+    'SE', 'BABA', 'NIO', 'F', 'GM', 'OXY', 'DVN', 'GS', 'MS', 'BA'
   ],
   etfs: [
     'SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'VOO', 'XLF', 'XLK', 'XLE', 'XLV',
@@ -33,7 +30,6 @@ const TICKER_UNIVERSE = {
   ]
 };
 
-// Sector mapping
 const TICKER_SECTORS: Record<string, string> = {
   'AAPL': 'Technology', 'MSFT': 'Technology', 'NVDA': 'Technology', 'AMD': 'Technology',
   'GOOGL': 'Communication', 'META': 'Communication', 'NFLX': 'Communication', 'DIS': 'Communication',
@@ -60,6 +56,7 @@ interface ScanConfig {
   minIVRank: number;
   maxIVRank: number;
   excludeEarningsWithin: number;
+  minScore: number;
 }
 
 interface TickerData {
@@ -106,6 +103,30 @@ interface MacroContext {
   daysToFOMC: number | null;
 }
 
+interface EnhancedTradeSetup {
+  symbol: string;
+  price: number;
+  score: number;
+  signal: string;
+  checks: Array<{ rule: string; passed: boolean; value: string; weight: number }>;
+  warnings: string[];
+  iv_data: { current_iv: number | null; iv_rank: number | null };
+  technicals: { rsi: number; support?: number; trend?: string };
+  earnings: { date: string | null; safe: boolean };
+  recommended_setup: {
+    leap?: { action: string; strike: number; expiration: string; dte: number; delta: number; price: number; cost: number };
+    short_call?: { action: string; strike: number; expiration: string; dte: number; delta: number | null; price: number; credit: number; extrinsic: number };
+    structure?: string;
+    legs?: Array<{ action: string; type: string; strike: number; delta: number; price: number }>;
+    metrics?: {
+      capital_required?: number; weekly_income?: number; income_velocity_pct?: number;
+      weeks_to_breakeven?: number; total_credit?: number; credit_pct?: number;
+      breakeven_lower?: number; breakeven_upper?: number;
+    };
+  } | null;
+  data_source: string;
+}
+
 // ============================================================================
 // API FETCHING
 // ============================================================================
@@ -113,7 +134,6 @@ interface MacroContext {
 async function fetchTickerData(ticker: string): Promise<TickerData> {
   const sector = TICKER_SECTORS[ticker] || 'Unknown';
   
-  // Fetch all data in parallel
   const [quoteRes, ivRes, sectorRes, earningsRes] = await Promise.allSettled([
     fetch(`/api/v1/market/quote/${ticker}`),
     fetch(`/api/v1/market/iv/${ticker}`),
@@ -121,7 +141,6 @@ async function fetchTickerData(ticker: string): Promise<TickerData> {
     fetch(`/api/v1/earnings/${ticker}`)
   ]);
   
-  // Parse quote (required)
   let price = 0, change = 0, changePct = 0;
   if (quoteRes.status === 'fulfilled' && quoteRes.value.ok) {
     const data = await quoteRes.value.json();
@@ -130,7 +149,6 @@ async function fetchTickerData(ticker: string): Promise<TickerData> {
     changePct = data.change_pct || data.percent_change || 0;
   }
   
-  // Parse IV (optional)
   let ivRank: number | null = null;
   let ivPercentile: number | null = null;
   let hasIVData = false;
@@ -141,7 +159,6 @@ async function fetchTickerData(ticker: string): Promise<TickerData> {
     hasIVData = ivRank !== null;
   }
   
-  // Parse sector RS (optional)
   let sectorRS: number | null = null;
   let hasSectorData = false;
   if (sectorRes.status === 'fulfilled' && sectorRes.value.ok) {
@@ -150,7 +167,6 @@ async function fetchTickerData(ticker: string): Promise<TickerData> {
     hasSectorData = sectorRS !== null;
   }
   
-  // Parse earnings (optional)
   let daysToEarnings: number | null = null;
   let hasEarningsData = false;
   if (earningsRes.status === 'fulfilled' && earningsRes.value.ok) {
@@ -159,20 +175,7 @@ async function fetchTickerData(ticker: string): Promise<TickerData> {
     hasEarningsData = true;
   }
   
-  return {
-    ticker,
-    price,
-    change,
-    changePct,
-    ivRank,
-    ivPercentile,
-    sectorRS,
-    sector,
-    daysToEarnings,
-    hasIVData,
-    hasSectorData,
-    hasEarningsData
-  };
+  return { ticker, price, change, changePct, ivRank, ivPercentile, sectorRS, sector, daysToEarnings, hasIVData, hasSectorData, hasEarningsData };
 }
 
 async function fetchMacroContext(): Promise<MacroContext> {
@@ -202,13 +205,25 @@ async function fetchMacroContext(): Promise<MacroContext> {
       daysToFOMC: calculateDaysToFOMC()
     };
   } catch {
-    return {
-      vix: 18,
-      vixRegime: 'elevated',
-      spyTrend: 'neutral',
-      spyChange: 0,
-      daysToFOMC: null
-    };
+    return { vix: 18, vixRegime: 'elevated', spyTrend: 'neutral', spyChange: 0, daysToFOMC: null };
+  }
+}
+
+async function fetchEnhancedTradeSetup(ticker: string, strategy: Strategy): Promise<EnhancedTradeSetup | null> {
+  try {
+    const endpoint = strategy === 'ipmcc' 
+      ? `/api/v1/scanner/enhanced/single/ipmcc/${ticker}`
+      : strategy === '112'
+      ? `/api/v1/scanner/enhanced/single/112/${ticker}`
+      : `/api/v1/scanner/enhanced/single/strangle/${ticker}`;
+    
+    const res = await fetch(endpoint);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.analysis || data;
+  } catch (e) {
+    console.error('Failed to fetch enhanced setup:', e);
+    return null;
   }
 }
 
@@ -231,9 +246,8 @@ function scoreIPMCC(data: TickerData, macro: MacroContext): StrategyScore {
   let score = 50;
   let reason = '';
   
-  // IV Rank (critical)
   if (data.ivRank === null) {
-    details.push(`⚠️ IV Rank: NO DATA - cannot properly score`);
+    details.push(`⚠️ IV Rank: NO DATA`);
     reason = 'Missing IV data';
   } else if (data.ivRank >= 40 && data.ivRank <= 70) {
     score += 25;
@@ -253,7 +267,6 @@ function scoreIPMCC(data: TickerData, macro: MacroContext): StrategyScore {
     reason = `IV ${data.ivRank} low`;
   }
   
-  // Sector RS
   if (data.sectorRS === null) {
     details.push(`⚠️ Sector RS: NO DATA`);
   } else if (data.sectorRS >= 1.05) {
@@ -267,7 +280,6 @@ function scoreIPMCC(data: TickerData, macro: MacroContext): StrategyScore {
     details.push(`✗ Sector RS ${data.sectorRS.toFixed(2)} weak: -15 pts`);
   }
   
-  // Earnings
   if (data.daysToEarnings !== null && data.daysToEarnings <= 14) {
     score -= 35;
     details.push(`✗ Earnings in ${data.daysToEarnings}d: -35 pts AVOID`);
@@ -276,7 +288,6 @@ function scoreIPMCC(data: TickerData, macro: MacroContext): StrategyScore {
     details.push(`△ Earnings in ${data.daysToEarnings}d: -12 pts`);
   }
   
-  // Market
   if (macro.spyTrend === 'bullish') {
     score += 8;
     details.push(`✓ Market bullish: +8 pts`);
@@ -285,7 +296,6 @@ function scoreIPMCC(data: TickerData, macro: MacroContext): StrategyScore {
     details.push(`✗ Market bearish: -12 pts`);
   }
   
-  // VIX
   if (macro.vixRegime === 'extreme') {
     score -= 20;
     details.push(`✗ VIX extreme: -20 pts`);
@@ -303,7 +313,6 @@ function score112(data: TickerData, macro: MacroContext): StrategyScore {
   let score = 50;
   let reason = '';
   
-  // IV Rank
   if (data.ivRank === null) {
     details.push(`⚠️ IV Rank: NO DATA`);
     reason = 'Missing IV data';
@@ -325,7 +334,6 @@ function score112(data: TickerData, macro: MacroContext): StrategyScore {
     reason = `IV ${data.ivRank} low`;
   }
   
-  // Trend
   if (macro.spyTrend !== 'neutral') {
     score += 18;
     details.push(`✓ Clear ${macro.spyTrend} trend: +18 pts`);
@@ -335,7 +343,6 @@ function score112(data: TickerData, macro: MacroContext): StrategyScore {
     details.push(`✗ Neutral trend: -8 pts`);
   }
   
-  // Sector alignment
   if (data.sectorRS !== null) {
     if (macro.spyTrend === 'bullish' && data.sectorRS >= 1.0) {
       score += 10;
@@ -346,7 +353,6 @@ function score112(data: TickerData, macro: MacroContext): StrategyScore {
     }
   }
   
-  // Earnings
   if (data.daysToEarnings !== null && data.daysToEarnings <= 21) {
     score -= 28;
     details.push(`✗ Earnings in ${data.daysToEarnings}d: -28 pts`);
@@ -361,9 +367,8 @@ function scoreStrangle(data: TickerData, macro: MacroContext): StrategyScore {
   let score = 40;
   let reason = '';
   
-  // IV Rank (critical for strangles)
   if (data.ivRank === null) {
-    details.push(`⚠️ IV Rank: NO DATA - CRITICAL for strangles`);
+    details.push(`⚠️ IV Rank: NO DATA - CRITICAL`);
     reason = 'Missing IV data';
   } else if (data.ivRank >= 60) {
     score += 38;
@@ -383,7 +388,6 @@ function scoreStrangle(data: TickerData, macro: MacroContext): StrategyScore {
     reason = `IV ${data.ivRank} avoid`;
   }
   
-  // Market trend (strangles hate trends)
   if (macro.spyTrend === 'neutral') {
     score += 18;
     details.push(`✓ Neutral market: +18 pts`);
@@ -392,13 +396,11 @@ function scoreStrangle(data: TickerData, macro: MacroContext): StrategyScore {
     details.push(`✗ Trending market: -18 pts`);
   }
   
-  // Earnings (never hold through)
   if (data.daysToEarnings !== null && data.daysToEarnings <= 30) {
     score -= 45;
     details.push(`✗ Earnings in ${data.daysToEarnings}d: -45 pts NEVER`);
   }
   
-  // VIX extreme
   if (macro.vixRegime === 'extreme') {
     score -= 30;
     details.push(`✗ VIX extreme: -30 pts`);
@@ -420,12 +422,7 @@ function getSignal(score: number): Signal {
 // COMPONENTS
 // ============================================================================
 
-function ScanConfigPanel({ 
-  config, 
-  setConfig, 
-  onStartScan,
-  macro
-}: { 
+function ScanConfigPanel({ config, setConfig, onStartScan, macro }: { 
   config: ScanConfig; 
   setConfig: (c: ScanConfig) => void;
   onStartScan: () => void;
@@ -437,240 +434,135 @@ function ScanConfigPanel({
     (config.categories.includes('etf') ? TICKER_UNIVERSE.etfs.length : 0);
   
   const strategyInfo = {
-    ipmcc: {
-      name: 'IPMCC (Covered Calls)',
-      description: 'Sell covered calls for premium income. Best with IV Rank 40-70.',
-      icon: Shield,
-      color: 'blue'
-    },
-    '112': {
-      name: '112 Trade',
-      description: 'Ratio spread for directional bias with defined risk. Best with clear trends.',
-      icon: TrendingUp,
-      color: 'purple'
-    },
-    strangle: {
-      name: 'Short Strangle',
-      description: 'Sell puts and calls for maximum premium. Requires high IV (60+) and neutral market.',
-      icon: Zap,
-      color: 'orange'
-    },
-    all: {
-      name: 'All Strategies',
-      description: 'Score each ticker for all three strategies and show the best one.',
-      icon: Target,
-      color: 'green'
-    }
+    ipmcc: { name: 'IPMCC', description: 'Covered calls. IV 40-70.', icon: Shield },
+    '112': { name: '112 Trade', description: 'Ratio spread. Clear trends.', icon: TrendingUp },
+    strangle: { name: 'Strangle', description: 'High IV (60+), neutral.', icon: Zap },
+    all: { name: 'All', description: 'Best match per ticker.', icon: Target }
   };
   
   return (
     <div className="space-y-6">
-      {/* Macro Context */}
       {macro && (
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <Globe className="w-4 h-4 text-blue-500" />Current Market Context
+            <Globe className="w-4 h-4 text-blue-500" />Market Context
           </h3>
           <div className="grid grid-cols-4 gap-4">
             <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
               <p className="text-xs text-gray-500">VIX</p>
-              <p className={`text-2xl font-bold ${
-                macro.vixRegime === 'low' ? 'text-green-500' :
-                macro.vixRegime === 'elevated' ? 'text-yellow-500' :
-                macro.vixRegime === 'high' ? 'text-orange-500' : 'text-red-500'
-              }`}>{macro.vix.toFixed(1)}</p>
-              <p className="text-xs">{macro.vixRegime.toUpperCase()}</p>
+              <p className={`text-2xl font-bold ${macro.vixRegime === 'low' ? 'text-green-500' : macro.vixRegime === 'elevated' ? 'text-yellow-500' : macro.vixRegime === 'high' ? 'text-orange-500' : 'text-red-500'}`}>{macro.vix.toFixed(1)}</p>
             </div>
             <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
-              <p className="text-xs text-gray-500">SPY Trend</p>
-              <p className={`text-2xl font-bold ${
-                macro.spyTrend === 'bullish' ? 'text-green-500' :
-                macro.spyTrend === 'bearish' ? 'text-red-500' : 'text-yellow-500'
-              }`}>
+              <p className="text-xs text-gray-500">SPY</p>
+              <p className={`text-2xl font-bold ${macro.spyTrend === 'bullish' ? 'text-green-500' : macro.spyTrend === 'bearish' ? 'text-red-500' : 'text-yellow-500'}`}>
                 {macro.spyTrend === 'bullish' ? '↑' : macro.spyTrend === 'bearish' ? '↓' : '→'}
               </p>
-              <p className="text-xs capitalize">{macro.spyTrend}</p>
             </div>
             <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
-              <p className="text-xs text-gray-500">SPY Change</p>
+              <p className="text-xs text-gray-500">Change</p>
               <p className={`text-2xl font-bold ${macro.spyChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 {macro.spyChange >= 0 ? '+' : ''}{macro.spyChange.toFixed(2)}%
               </p>
             </div>
-            {macro.daysToFOMC !== null && (
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                <p className="text-xs text-gray-500">Next FOMC</p>
-                <p className={`text-2xl font-bold ${macro.daysToFOMC <= 7 ? 'text-red-500' : ''}`}>
-                  {macro.daysToFOMC}d
-                </p>
-              </div>
-            )}
+            <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
+              <p className="text-xs text-gray-500">Tickers</p>
+              <p className="text-2xl font-bold text-blue-500">{totalTickers}</p>
+            </div>
           </div>
         </div>
       )}
       
-      {/* Strategy Selection */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow">
-        <h3 className="font-semibold mb-4 flex items-center gap-2">
-          <Target className="w-5 h-5 text-blue-500" />
-          Select Strategy to Scan
-        </h3>
-        <div className="grid grid-cols-2 gap-4">
-          {(['ipmcc', '112', 'strangle', 'all'] as const).map(strat => {
-            const info = strategyInfo[strat];
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
+        <h3 className="font-semibold mb-3">Strategy</h3>
+        <div className="grid grid-cols-4 gap-3">
+          {(['all', 'ipmcc', '112', 'strangle'] as const).map(s => {
+            const info = strategyInfo[s];
             const Icon = info.icon;
-            const isSelected = config.strategy === strat;
-            const colorClass = {
-              blue: 'border-blue-500 bg-blue-50 dark:bg-blue-900/20',
-              purple: 'border-purple-500 bg-purple-50 dark:bg-purple-900/20',
-              orange: 'border-orange-500 bg-orange-50 dark:bg-orange-900/20',
-              green: 'border-green-500 bg-green-50 dark:bg-green-900/20'
-            }[info.color];
-            
+            const sel = config.strategy === s;
             return (
-              <button
-                key={strat}
-                onClick={() => setConfig({ ...config, strategy: strat })}
-                className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  isSelected ? colorClass : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <Icon className={`w-5 h-5 ${isSelected ? `text-${info.color}-500` : 'text-gray-400'}`} />
-                  <span className="font-semibold">{info.name}</span>
-                  {isSelected && <CheckCircle className="w-4 h-4 text-green-500 ml-auto" />}
-                </div>
-                <p className="text-sm text-gray-500">{info.description}</p>
+              <button key={s} onClick={() => setConfig({ ...config, strategy: s })}
+                className={`p-3 rounded-lg border-2 text-left ${sel ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700'}`}>
+                <Icon className={`w-5 h-5 mb-1 ${sel ? 'text-blue-500' : 'text-gray-400'}`} />
+                <p className="font-medium text-sm">{info.name}</p>
+                <p className="text-xs text-gray-500">{info.description}</p>
               </button>
             );
           })}
         </div>
       </div>
       
-      {/* Category Selection */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow">
-        <h3 className="font-semibold mb-4 flex items-center gap-2">
-          <Filter className="w-5 h-5 text-blue-500" />
-          Select Categories to Scan
-        </h3>
-        <div className="flex gap-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
+        <h3 className="font-semibold mb-3">Ticker Universe (v3.0)</h3>
+        <div className="grid grid-cols-3 gap-3">
           {[
-            { id: 'megaCap', label: 'Mega Caps', count: TICKER_UNIVERSE.megaCaps.length },
-            { id: 'largeCap', label: 'Large Caps', count: TICKER_UNIVERSE.largeCaps.length },
-            { id: 'etf', label: 'ETFs', count: TICKER_UNIVERSE.etfs.length }
+            { key: 'megaCap' as const, label: 'Mega Caps', count: TICKER_UNIVERSE.megaCaps.length },
+            { key: 'largeCap' as const, label: 'Large Caps', count: TICKER_UNIVERSE.largeCaps.length },
+            { key: 'etf' as const, label: 'ETFs', count: TICKER_UNIVERSE.etfs.length }
           ].map(cat => {
-            const isSelected = config.categories.includes(cat.id as any);
+            const sel = config.categories.includes(cat.key);
             return (
-              <button
-                key={cat.id}
-                onClick={() => {
-                  const newCats = isSelected
-                    ? config.categories.filter(c => c !== cat.id)
-                    : [...config.categories, cat.id as any];
-                  if (newCats.length > 0) {
-                    setConfig({ ...config, categories: newCats });
-                  }
-                }}
-                className={`flex-1 p-4 rounded-lg border-2 transition-all ${
-                  isSelected 
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
-                    : 'border-gray-200 dark:border-gray-700'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium">{cat.label}</span>
-                  {isSelected && <CheckCircle className="w-4 h-4 text-green-500" />}
-                </div>
-                <p className="text-sm text-gray-500">{cat.count} tickers</p>
+              <button key={cat.key} onClick={() => {
+                const newCats = sel ? config.categories.filter(c => c !== cat.key) : [...config.categories, cat.key];
+                setConfig({ ...config, categories: newCats });
+              }} className={`p-3 rounded-lg border-2 text-center ${sel ? 'border-green-500 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'}`}>
+                <p className="font-medium">{cat.label}</p>
+                <p className="text-xl font-bold text-blue-500">{cat.count}</p>
               </button>
             );
           })}
         </div>
       </div>
       
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow">
-        <h3 className="font-semibold mb-4 flex items-center gap-2">
-          <Settings className="w-5 h-5 text-blue-500" />
-          Scan Filters (Optional)
-        </h3>
-        <div className="grid grid-cols-3 gap-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
+        <h3 className="font-semibold mb-3">Filters</h3>
+        <div className="grid grid-cols-4 gap-4">
           <div>
-            <label className="text-sm text-gray-500 block mb-2">Min IV Rank</label>
-            <input
-              type="number"
-              value={config.minIVRank}
-              onChange={e => setConfig({ ...config, minIVRank: +e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 bg-white dark:bg-gray-700"
-              min={0}
-              max={100}
-            />
-            <p className="text-xs text-gray-400 mt-1">0 = no minimum</p>
+            <label className="text-sm text-gray-500 block mb-1">Min IV Rank</label>
+            <input type="number" value={config.minIVRank} onChange={e => setConfig({ ...config, minIVRank: +e.target.value })}
+              className="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700" min={0} max={100} />
           </div>
           <div>
-            <label className="text-sm text-gray-500 block mb-2">Max IV Rank</label>
-            <input
-              type="number"
-              value={config.maxIVRank}
-              onChange={e => setConfig({ ...config, maxIVRank: +e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 bg-white dark:bg-gray-700"
-              min={0}
-              max={100}
-            />
-            <p className="text-xs text-gray-400 mt-1">100 = no maximum</p>
+            <label className="text-sm text-gray-500 block mb-1">Max IV Rank</label>
+            <input type="number" value={config.maxIVRank} onChange={e => setConfig({ ...config, maxIVRank: +e.target.value })}
+              className="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700" min={0} max={100} />
           </div>
           <div>
-            <label className="text-sm text-gray-500 block mb-2">Exclude Earnings Within (days)</label>
-            <input
-              type="number"
-              value={config.excludeEarningsWithin}
-              onChange={e => setConfig({ ...config, excludeEarningsWithin: +e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 bg-white dark:bg-gray-700"
-              min={0}
-              max={60}
-            />
-            <p className="text-xs text-gray-400 mt-1">0 = don't exclude</p>
+            <label className="text-sm text-gray-500 block mb-1">Exclude Earnings</label>
+            <input type="number" value={config.excludeEarningsWithin} onChange={e => setConfig({ ...config, excludeEarningsWithin: +e.target.value })}
+              className="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700" min={0} max={60} />
+          </div>
+          <div>
+            <label className="text-sm text-gray-500 block mb-1">Min Score ⭐</label>
+            <input type="number" value={config.minScore} onChange={e => setConfig({ ...config, minScore: +e.target.value })}
+              className="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 border-blue-300" min={0} max={100} />
           </div>
         </div>
       </div>
       
-      {/* API Data Notice */}
-      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+          <Info className="w-5 h-5 text-blue-600 mt-0.5" />
           <div>
-            <h4 className="font-medium text-yellow-800 dark:text-yellow-300">Data Requirements</h4>
-            <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-1">
-              Accurate scoring requires IV Rank data from the API. If IV data is unavailable, 
-              tickers will be marked with a warning and scores may be less reliable.
+            <h4 className="font-medium text-blue-800 dark:text-blue-300">v3.0 Update</h4>
+            <p className="text-sm text-blue-700 dark:text-blue-400">
+              Optimized to 80 tickers for faster scans. Click results for <strong>detailed trade setups</strong> with specific strikes and income velocity.
             </p>
           </div>
         </div>
       </div>
       
-      {/* Start Scan Button */}
-      <button
-        onClick={onStartScan}
-        disabled={totalTickers === 0}
-        className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-4 rounded-lg font-semibold flex items-center justify-center gap-3 text-lg"
-      >
-        <Play className="w-6 h-6" />
-        Start Scan ({totalTickers} tickers)
+      <button onClick={onStartScan} disabled={totalTickers === 0}
+        className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-4 rounded-lg font-semibold flex items-center justify-center gap-3 text-lg">
+        <Play className="w-6 h-6" />Start Scan ({totalTickers} tickers, min score ≥{config.minScore})
       </button>
     </div>
   );
 }
 
 function SignalBadge({ signal }: { signal: Signal }) {
-  const cfg = {
-    strong_buy: { bg: 'bg-green-500', label: 'STRONG BUY' },
-    buy: { bg: 'bg-green-400', label: 'BUY' },
-    neutral: { bg: 'bg-yellow-500', label: 'NEUTRAL' },
-    avoid: { bg: 'bg-orange-500', label: 'AVOID' },
-    strong_avoid: { bg: 'bg-red-500', label: 'AVOID' }
-  };
-  const { bg, label } = cfg[signal];
-  return <span className={`${bg} text-white text-xs px-2 py-1 rounded font-medium`}>{label}</span>;
+  const colors: Record<Signal, string> = { strong_buy: 'bg-green-500', buy: 'bg-green-400', neutral: 'bg-yellow-500', avoid: 'bg-orange-500', strong_avoid: 'bg-red-500' };
+  const labels: Record<Signal, string> = { strong_buy: 'STRONG BUY', buy: 'BUY', neutral: 'NEUTRAL', avoid: 'AVOID', strong_avoid: 'AVOID' };
+  return <span className={`${colors[signal]} text-white text-xs px-2 py-1 rounded font-medium`}>{labels[signal]}</span>;
 }
 
 function ResultRow({ result, strategy, onClick }: { result: ScanResult; strategy: Strategy | 'all'; onClick: () => void }) {
@@ -682,9 +574,7 @@ function ResultRow({ result, strategy, onClick }: { result: ScanResult; strategy
       <td className="py-3 px-4">
         <div className="flex items-center gap-2">
           <span className="font-bold">{result.ticker}</span>
-          {result.missingData.length > 0 && (
-            <AlertTriangle className="w-3 h-3 text-yellow-500" title={`Missing: ${result.missingData.join(', ')}`} />
-          )}
+          {result.missingData.length > 0 && <AlertTriangle className="w-3 h-3 text-yellow-500" />}
         </div>
         <div className="text-xs text-gray-500">{result.data.sector}</div>
       </td>
@@ -698,34 +588,22 @@ function ResultRow({ result, strategy, onClick }: { result: ScanResult; strategy
         {result.data.ivRank !== null ? (
           <div className="flex items-center gap-2">
             <div className="w-16 h-2 bg-gray-200 rounded-full">
-              <div className={`h-full rounded-full ${
-                result.data.ivRank >= 50 ? 'bg-purple-500' : result.data.ivRank >= 30 ? 'bg-blue-500' : 'bg-gray-400'
-              }`} style={{ width: `${result.data.ivRank}%` }} />
+              <div className={`h-full rounded-full ${result.data.ivRank >= 50 ? 'bg-purple-500' : result.data.ivRank >= 30 ? 'bg-blue-500' : 'bg-gray-400'}`} style={{ width: `${result.data.ivRank}%` }} />
             </div>
             <span className="font-medium">{result.data.ivRank}</span>
           </div>
-        ) : (
-          <span className="text-yellow-500 text-sm flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3" />No Data
-          </span>
-        )}
+        ) : <span className="text-yellow-500 text-sm">N/A</span>}
       </td>
       <td className="py-3 px-4">
         <SignalBadge signal={result.selectedSignal} />
-        {strategy === 'all' && (
-          <div className="text-xs text-gray-500 mt-1">{strategyNames[displayStrategy]}</div>
-        )}
+        {strategy === 'all' && <div className="text-xs text-gray-500 mt-1">{strategyNames[displayStrategy]}</div>}
       </td>
       <td className="py-3 px-4">
-        <span className={`font-bold text-lg ${
-          result.selectedScore >= 62 ? 'text-green-500' : result.selectedScore >= 42 ? 'text-yellow-500' : 'text-red-500'
-        }`}>{result.selectedScore}</span>
+        <span className={`font-bold text-lg ${result.selectedScore >= 62 ? 'text-green-500' : result.selectedScore >= 42 ? 'text-yellow-500' : 'text-red-500'}`}>{result.selectedScore}</span>
       </td>
       <td className="py-3 px-4">
         {result.data.daysToEarnings !== null ? (
-          <span className={result.data.daysToEarnings <= 14 ? 'text-red-500 font-bold' : 'text-yellow-500'}>
-            {result.data.daysToEarnings}d
-          </span>
+          <span className={result.data.daysToEarnings <= 14 ? 'text-red-500 font-bold' : 'text-yellow-500'}>{result.data.daysToEarnings}d</span>
         ) : '-'}
       </td>
     </tr>
@@ -733,120 +611,252 @@ function ResultRow({ result, strategy, onClick }: { result: ScanResult; strategy
 }
 
 function DetailModal({ result, onClose }: { result: ScanResult; onClose: () => void }) {
+  const [enhanced, setEnhanced] = useState<EnhancedTradeSetup | null>(null);
+  const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchEnhancedTradeSetup(result.ticker, result.selectedStrategy)
+      .then(data => { setEnhanced(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [result.ticker, result.selectedStrategy]);
+
+  const strategyNames: Record<Strategy, string> = { ipmcc: 'IPMCC', '112': '112 Trade', strangle: 'Strangle' };
   
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black bg-opacity-60" />
-      <div 
-        className="relative bg-white dark:bg-gray-900 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="relative bg-white dark:bg-gray-900 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="p-6">
-          {/* Missing data warning */}
-          {result.missingData.length > 0 && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 rounded-lg p-3 mb-4">
-              <div className="flex items-center gap-2 text-yellow-700 dark:text-yellow-400">
-                <AlertTriangle className="w-4 h-4" />
-                <span className="font-medium">Missing data: {result.missingData.join(', ')}</span>
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-bold">{result.ticker}</h2>
+                <SignalBadge signal={result.selectedSignal} />
+                <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{strategyNames[result.selectedStrategy]}</span>
               </div>
-              <p className="text-sm text-yellow-600 dark:text-yellow-500 mt-1">
-                Scores may be less accurate without complete data
-              </p>
+              <p className="text-gray-500">{result.data.sector} • ${result.data.price.toFixed(2)}</p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"><X className="w-5 h-5" /></button>
+          </div>
+          
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+              <span className="ml-3 text-gray-500">Loading trade setup...</span>
             </div>
           )}
           
-          {/* Header */}
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h2 className="text-2xl font-bold">{result.ticker}</h2>
-              <p className="text-gray-500">{result.data.sector} • ${result.data.price.toFixed(2)}</p>
-            </div>
-            <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          {!loading && enhanced && (
+            <>
+              <div className="grid grid-cols-4 gap-3 mb-6">
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
+                  <div className="text-xs text-gray-500">Score</div>
+                  <div className={`text-2xl font-bold ${enhanced.score >= 80 ? 'text-green-500' : enhanced.score >= 60 ? 'text-blue-500' : 'text-yellow-500'}`}>{enhanced.score}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
+                  <div className="text-xs text-gray-500">Current IV</div>
+                  <div className="text-2xl font-bold text-purple-500">{enhanced.iv_data?.current_iv?.toFixed(1) ?? 'N/A'}%</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
+                  <div className="text-xs text-gray-500">RSI</div>
+                  <div className={`text-2xl font-bold ${(enhanced.technicals?.rsi ?? 50) < 40 ? 'text-green-500' : (enhanced.technicals?.rsi ?? 50) > 60 ? 'text-red-500' : ''}`}>{enhanced.technicals?.rsi?.toFixed(0) ?? 'N/A'}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
+                  <div className="text-xs text-gray-500">Data</div>
+                  <div className={`text-lg font-bold ${enhanced.data_source === 'schwab' ? 'text-green-500' : 'text-yellow-500'}`}>{enhanced.data_source === 'schwab' ? '🔴 Live' : '📊 Delayed'}</div>
+                </div>
+              </div>
+              
+              {enhanced.checks && enhanced.checks.length > 0 && (
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mb-6">
+                  <h3 className="font-semibold mb-3 flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500" />Rule Validation</h3>
+                  <div className="space-y-2">
+                    {enhanced.checks.map((check, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          {check.passed ? <CheckCircle className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-500" />}
+                          <span className={check.passed ? '' : 'text-gray-500'}>{check.rule}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500 text-xs">{check.value}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${check.weight > 0 ? 'bg-green-100 text-green-700 dark:bg-green-900/30' : 'bg-gray-100 text-gray-500'}`}>+{check.weight}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {enhanced.warnings && enhanced.warnings.length > 0 && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 rounded-lg p-4 mb-6">
+                  <h4 className="font-medium text-yellow-800 dark:text-yellow-300 flex items-center gap-2 mb-2"><AlertTriangle className="w-4 h-4" />Warnings</h4>
+                  <ul className="text-sm text-yellow-700 dark:text-yellow-400 space-y-1">
+                    {enhanced.warnings.map((w, i) => <li key={i}>• {w}</li>)}
+                  </ul>
+                </div>
+              )}
+              
+              {enhanced.recommended_setup && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-300 rounded-lg p-4 mb-6">
+                  <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-4 flex items-center gap-2"><Target className="w-5 h-5" />Trade Setup</h3>
+                  
+                  {result.selectedStrategy === 'ipmcc' && enhanced.recommended_setup.leap && (
+                    <div className="space-y-4">
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
+                        <div className="flex justify-between mb-2">
+                          <span className="font-semibold text-green-600">BUY LEAP</span>
+                          <span className="text-lg font-bold">${enhanced.recommended_setup.leap.price.toFixed(2)}</span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 text-sm">
+                          <div><span className="text-gray-500">Strike:</span> ${enhanced.recommended_setup.leap.strike}</div>
+                          <div><span className="text-gray-500">Exp:</span> {enhanced.recommended_setup.leap.expiration}</div>
+                          <div><span className="text-gray-500">DTE:</span> {enhanced.recommended_setup.leap.dte}</div>
+                          <div><span className="text-gray-500">Delta:</span> {enhanced.recommended_setup.leap.delta}</div>
+                        </div>
+                        <div className="mt-2 text-sm">Cost: <span className="font-bold text-blue-600">${enhanced.recommended_setup.leap.cost.toFixed(2)}</span></div>
+                      </div>
+                      
+                      {enhanced.recommended_setup.short_call && (
+                        <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
+                          <div className="flex justify-between mb-2">
+                            <span className="font-semibold text-red-600">SELL Short Call</span>
+                            <span className="text-lg font-bold">${enhanced.recommended_setup.short_call.price.toFixed(2)}</span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 text-sm">
+                            <div><span className="text-gray-500">Strike:</span> ${enhanced.recommended_setup.short_call.strike}</div>
+                            <div><span className="text-gray-500">Exp:</span> {enhanced.recommended_setup.short_call.expiration}</div>
+                            <div><span className="text-gray-500">DTE:</span> {enhanced.recommended_setup.short_call.dte}</div>
+                            <div><span className="text-gray-500">Extrinsic:</span> <span className="text-green-600">${enhanced.recommended_setup.short_call.extrinsic.toFixed(2)}</span></div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {enhanced.recommended_setup.metrics && (
+                        <div className="grid grid-cols-4 gap-3">
+                          {enhanced.recommended_setup.metrics.capital_required !== undefined && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-center">
+                              <div className="text-xs text-gray-500">Capital</div>
+                              <div className="text-xl font-bold text-blue-600">${enhanced.recommended_setup.metrics.capital_required.toFixed(0)}</div>
+                            </div>
+                          )}
+                          {enhanced.recommended_setup.metrics.weekly_income !== undefined && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-center">
+                              <div className="text-xs text-gray-500">Weekly $</div>
+                              <div className="text-xl font-bold text-green-600">${enhanced.recommended_setup.metrics.weekly_income.toFixed(0)}</div>
+                            </div>
+                          )}
+                          {enhanced.recommended_setup.metrics.income_velocity_pct !== undefined && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-center">
+                              <div className="text-xs text-gray-500">Velocity</div>
+                              <div className="text-xl font-bold text-purple-600">{enhanced.recommended_setup.metrics.income_velocity_pct.toFixed(2)}%</div>
+                            </div>
+                          )}
+                          {enhanced.recommended_setup.metrics.weeks_to_breakeven !== undefined && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-center">
+                              <div className="text-xs text-gray-500">Weeks BE</div>
+                              <div className="text-xl font-bold">{enhanced.recommended_setup.metrics.weeks_to_breakeven.toFixed(0)}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {(result.selectedStrategy === '112' || result.selectedStrategy === 'strangle') && enhanced.recommended_setup.legs && (
+                    <div className="space-y-4">
+                      <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
+                        {enhanced.recommended_setup.structure && <div className="font-semibold mb-3">{enhanced.recommended_setup.structure}</div>}
+                        {enhanced.recommended_setup.legs.map((leg, i) => (
+                          <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                            <span className={leg.action === 'BUY' ? 'text-green-600' : 'text-red-600'}>{leg.action} {leg.type} ${leg.strike}</span>
+                            <span>Δ {leg.delta.toFixed(2)} | ${leg.price.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {enhanced.recommended_setup.metrics && (
+                        <div className="grid grid-cols-4 gap-3">
+                          {enhanced.recommended_setup.metrics.total_credit !== undefined && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-center">
+                              <div className="text-xs text-gray-500">Credit</div>
+                              <div className="text-xl font-bold text-green-600">${enhanced.recommended_setup.metrics.total_credit.toFixed(2)}</div>
+                            </div>
+                          )}
+                          {enhanced.recommended_setup.metrics.credit_pct !== undefined && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-center">
+                              <div className="text-xs text-gray-500">Credit %</div>
+                              <div className="text-xl font-bold text-purple-600">{enhanced.recommended_setup.metrics.credit_pct.toFixed(2)}%</div>
+                            </div>
+                          )}
+                          {enhanced.recommended_setup.metrics.breakeven_lower !== undefined && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-center">
+                              <div className="text-xs text-gray-500">Lower BE</div>
+                              <div className="text-lg font-bold">${enhanced.recommended_setup.metrics.breakeven_lower.toFixed(2)}</div>
+                            </div>
+                          )}
+                          {enhanced.recommended_setup.metrics.breakeven_upper !== undefined && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-center">
+                              <div className="text-xs text-gray-500">Upper BE</div>
+                              <div className="text-lg font-bold">${enhanced.recommended_setup.metrics.breakeven_upper.toFixed(2)}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {!enhanced.recommended_setup && (
+                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-6 mb-6 text-center">
+                  <Info className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-gray-500">No trade setup available. May need Schwab API authentication.</p>
+                </div>
+              )}
+            </>
+          )}
           
-          {/* Metrics */}
-          <div className="grid grid-cols-4 gap-3 mb-6">
-            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
-              <div className="text-xs text-gray-500">IV Rank</div>
-              <div className={`text-xl font-bold ${result.data.ivRank !== null ? 'text-purple-500' : 'text-yellow-500'}`}>
-                {result.data.ivRank ?? 'N/A'}
+          {!loading && !enhanced && (
+            <>
+              <div className="grid grid-cols-4 gap-3 mb-6">
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
+                  <div className="text-xs text-gray-500">IV Rank</div>
+                  <div className={`text-xl font-bold ${result.data.ivRank !== null ? 'text-purple-500' : 'text-yellow-500'}`}>{result.data.ivRank ?? 'N/A'}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
+                  <div className="text-xs text-gray-500">Sector RS</div>
+                  <div className={`text-xl font-bold ${result.data.sectorRS !== null ? (result.data.sectorRS >= 1 ? 'text-green-500' : 'text-red-500') : 'text-yellow-500'}`}>{result.data.sectorRS?.toFixed(2) ?? 'N/A'}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
+                  <div className="text-xs text-gray-500">Earnings</div>
+                  <div className={`text-xl font-bold ${result.data.daysToEarnings !== null && result.data.daysToEarnings <= 14 ? 'text-red-500' : ''}`}>{result.data.daysToEarnings !== null ? `${result.data.daysToEarnings}d` : '-'}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
+                  <div className="text-xs text-gray-500">Change</div>
+                  <div className={`text-xl font-bold ${result.data.changePct >= 0 ? 'text-green-500' : 'text-red-500'}`}>{result.data.changePct >= 0 ? '+' : ''}{result.data.changePct.toFixed(2)}%</div>
+                </div>
               </div>
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
-              <div className="text-xs text-gray-500">Sector RS</div>
-              <div className={`text-xl font-bold ${
-                result.data.sectorRS !== null 
-                  ? (result.data.sectorRS >= 1 ? 'text-green-500' : 'text-red-500')
-                  : 'text-yellow-500'
-              }`}>
-                {result.data.sectorRS?.toFixed(2) ?? 'N/A'}
+              
+              <div className="space-y-4 mb-6">
+                <h3 className="font-semibold text-lg">Strategy Analysis</h3>
+                {result.ipmcc && <StrategyCard name="IPMCC" strategy={result.ipmcc} isBest={result.selectedStrategy === 'ipmcc'} expanded={expanded === 'ipmcc'} onToggle={() => setExpanded(expanded === 'ipmcc' ? null : 'ipmcc')} />}
+                {result.t112 && <StrategyCard name="112 Trade" strategy={result.t112} isBest={result.selectedStrategy === '112'} expanded={expanded === '112'} onToggle={() => setExpanded(expanded === '112' ? null : '112')} />}
+                {result.strangle && <StrategyCard name="Strangle" strategy={result.strangle} isBest={result.selectedStrategy === 'strangle'} expanded={expanded === 'strangle'} onToggle={() => setExpanded(expanded === 'strangle' ? null : 'strangle')} />}
               </div>
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
-              <div className="text-xs text-gray-500">Earnings</div>
-              <div className={`text-xl font-bold ${
-                result.data.daysToEarnings !== null && result.data.daysToEarnings <= 14 ? 'text-red-500' : ''
-              }`}>
-                {result.data.daysToEarnings !== null ? `${result.data.daysToEarnings}d` : '-'}
-              </div>
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-center">
-              <div className="text-xs text-gray-500">Change</div>
-              <div className={`text-xl font-bold ${result.data.changePct >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {result.data.changePct >= 0 ? '+' : ''}{result.data.changePct.toFixed(2)}%
-              </div>
-            </div>
-          </div>
+            </>
+          )}
           
-          {/* Strategy Scores */}
-          <div className="space-y-4 mb-6">
-            <h3 className="font-semibold text-lg">Strategy Analysis</h3>
-            
-            {result.ipmcc && (
-              <StrategyCard 
-                name="IPMCC (Covered Calls)" 
-                strategy={result.ipmcc}
-                isBest={result.selectedStrategy === 'ipmcc'}
-                expanded={expanded === 'ipmcc'}
-                onToggle={() => setExpanded(expanded === 'ipmcc' ? null : 'ipmcc')}
-              />
-            )}
-            
-            {result.t112 && (
-              <StrategyCard 
-                name="112 Trade" 
-                strategy={result.t112}
-                isBest={result.selectedStrategy === '112'}
-                expanded={expanded === '112'}
-                onToggle={() => setExpanded(expanded === '112' ? null : '112')}
-              />
-            )}
-            
-            {result.strangle && (
-              <StrategyCard 
-                name="Short Strangle" 
-                strategy={result.strangle}
-                isBest={result.selectedStrategy === 'strangle'}
-                expanded={expanded === 'strangle'}
-                onToggle={() => setExpanded(expanded === 'strangle' ? null : 'strangle')}
-              />
-            )}
-          </div>
-          
-          {/* Actions */}
           <div className="flex gap-3">
-            <Link 
-              href={`/trade-lab?ticker=${result.ticker}&strategy=${result.selectedStrategy}`}
-              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg text-center font-medium"
-            >
-              Open in Trade Lab
+            <Link href={`/trade-lab?ticker=${result.ticker}&strategy=${result.selectedStrategy}`}
+              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg text-center font-medium flex items-center justify-center gap-2">
+              <ExternalLink className="w-4 h-4" />Trade Lab
             </Link>
-            <button onClick={onClose} className="flex-1 bg-gray-200 dark:bg-gray-700 py-3 rounded-lg font-medium">
-              Close
-            </button>
+            <Link href={`/positions/new?ticker=${result.ticker}&strategy=${result.selectedStrategy}${enhanced?.recommended_setup?.leap ? `&leapStrike=${enhanced.recommended_setup.leap.strike}&leapExp=${enhanced.recommended_setup.leap.expiration}` : ''}`}
+              className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg text-center font-medium flex items-center justify-center gap-2">
+              <ArrowRight className="w-4 h-4" />Quick Trade
+            </Link>
+            <button onClick={onClose} className="px-6 bg-gray-200 dark:bg-gray-700 py-3 rounded-lg font-medium">Close</button>
           </div>
         </div>
       </div>
@@ -854,23 +864,9 @@ function DetailModal({ result, onClose }: { result: ScanResult; onClose: () => v
   );
 }
 
-function StrategyCard({ 
-  name, 
-  strategy, 
-  isBest,
-  expanded,
-  onToggle
-}: { 
-  name: string; 
-  strategy: StrategyScore; 
-  isBest: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
+function StrategyCard({ name, strategy, isBest, expanded, onToggle }: { name: string; strategy: StrategyScore; isBest: boolean; expanded: boolean; onToggle: () => void }) {
   return (
-    <div className={`border-2 rounded-lg p-4 ${
-      isBest ? 'bg-green-50 dark:bg-green-900/20 border-green-500' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-    }`}>
+    <div className={`border-2 rounded-lg p-4 ${isBest ? 'bg-green-50 dark:bg-green-900/20 border-green-500' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
       <div className="flex justify-between items-center mb-2">
         <div className="flex items-center gap-2">
           <span className="font-bold">{name}</span>
@@ -878,25 +874,15 @@ function StrategyCard({
         </div>
         <SignalBadge signal={strategy.signal} />
       </div>
-      
       <div className="flex items-center gap-3 mb-2">
         <div className="flex-1 h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div className="h-full bg-blue-500" style={{ width: `${strategy.score}%` }} />
         </div>
         <span className="font-bold text-lg w-10">{strategy.score}</span>
       </div>
-      
       <p className="text-sm font-medium mb-2">{strategy.reason}</p>
-      
-      <button onClick={onToggle} className="text-sm text-blue-500 hover:underline">
-        {expanded ? '▼ Hide details' : '▶ Show details'}
-      </button>
-      
-      {expanded && (
-        <ul className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-400">
-          {strategy.details.map((d, i) => <li key={i}>{d}</li>)}
-        </ul>
-      )}
+      <button onClick={onToggle} className="text-sm text-blue-500 hover:underline">{expanded ? '▼ Hide' : '▶ Details'}</button>
+      {expanded && <ul className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-400">{strategy.details.map((d, i) => <li key={i}>{d}</li>)}</ul>}
     </div>
   );
 }
@@ -912,25 +898,20 @@ export default function LongTermScanner() {
     categories: ['megaCap', 'largeCap', 'etf'],
     minIVRank: 0,
     maxIVRank: 100,
-    excludeEarningsWithin: 0
+    excludeEarningsWithin: 0,
+    minScore: 50
   });
   const [results, setResults] = useState<ScanResult[]>([]);
   const [macro, setMacro] = useState<MacroContext | null>(null);
   const [selectedResult, setSelectedResult] = useState<ScanResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [dataStats, setDataStats] = useState({ withIV: 0, withoutIV: 0 });
-  
-  // Filters for results
   const [signalFilter, setSignalFilter] = useState<'all' | 'buy' | 'avoid'>('all');
   const [sortBy, setSortBy] = useState<'score' | 'ivRank'>('score');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   
-  // Load macro on mount
-  useEffect(() => {
-    fetchMacroContext().then(setMacro);
-  }, []);
+  useEffect(() => { fetchMacroContext().then(setMacro); }, []);
   
-  // Build ticker list based on config
   const tickersToScan = useMemo(() => {
     let tickers: string[] = [];
     if (config.categories.includes('megaCap')) tickers.push(...TICKER_UNIVERSE.megaCaps);
@@ -939,10 +920,8 @@ export default function LongTermScanner() {
     return tickers;
   }, [config.categories]);
   
-  // Run scan
   const runScan = useCallback(async () => {
     if (!macro) return;
-    
     setPhase('scanning');
     setProgress(0);
     
@@ -952,94 +931,50 @@ export default function LongTermScanner() {
     
     for (let i = 0; i < tickersToScan.length; i += batchSize) {
       const batch = tickersToScan.slice(i, i + batchSize);
-      
-      const batchResults = await Promise.all(
-        batch.map(async (ticker) => {
-          const data = await fetchTickerData(ticker);
-          
-          // Track IV data availability
-          if (data.hasIVData) withIV++;
-          else withoutIV++;
-          
-          // Apply filters
-          if (config.minIVRank > 0 && (data.ivRank === null || data.ivRank < config.minIVRank)) {
-            return null;
-          }
-          if (config.maxIVRank < 100 && data.ivRank !== null && data.ivRank > config.maxIVRank) {
-            return null;
-          }
-          if (config.excludeEarningsWithin > 0 && data.daysToEarnings !== null && data.daysToEarnings <= config.excludeEarningsWithin) {
-            return null;
-          }
-          
-          // Score strategies
-          let ipmcc: StrategyScore | null = null;
-          let t112: StrategyScore | null = null;
-          let strangle: StrategyScore | null = null;
-          
-          if (config.strategy === 'all' || config.strategy === 'ipmcc') {
-            ipmcc = scoreIPMCC(data, macro);
-          }
-          if (config.strategy === 'all' || config.strategy === '112') {
-            t112 = score112(data, macro);
-          }
-          if (config.strategy === 'all' || config.strategy === 'strangle') {
-            strangle = scoreStrangle(data, macro);
-          }
-          
-          // Determine selected strategy/score
-          let selectedStrategy: Strategy;
-          let selectedScore: number;
-          let selectedSignal: Signal;
-          
-          if (config.strategy !== 'all') {
-            selectedStrategy = config.strategy;
-            const strat = config.strategy === 'ipmcc' ? ipmcc : config.strategy === '112' ? t112 : strangle;
-            selectedScore = strat!.score;
-            selectedSignal = strat!.signal;
-          } else {
-            const scores = [
-              ipmcc && { strategy: 'ipmcc' as Strategy, score: ipmcc.score, signal: ipmcc.signal },
-              t112 && { strategy: '112' as Strategy, score: t112.score, signal: t112.signal },
-              strangle && { strategy: 'strangle' as Strategy, score: strangle.score, signal: strangle.signal }
-            ].filter(Boolean) as { strategy: Strategy; score: number; signal: Signal }[];
-            
-            scores.sort((a, b) => b.score - a.score);
-            selectedStrategy = scores[0].strategy;
-            selectedScore = scores[0].score;
-            selectedSignal = scores[0].signal;
-          }
-          
-          // Track missing data
-          const missingData: string[] = [];
-          if (!data.hasIVData) missingData.push('IV Rank');
-          if (!data.hasSectorData) missingData.push('Sector RS');
-          if (!data.hasEarningsData) missingData.push('Earnings');
-          
-          // Determine category
-          let category: 'megaCap' | 'largeCap' | 'etf' = 'largeCap';
-          if (TICKER_UNIVERSE.megaCaps.includes(ticker)) category = 'megaCap';
-          else if (TICKER_UNIVERSE.etfs.includes(ticker)) category = 'etf';
-          
-          return {
-            ticker,
-            category,
-            data,
-            ipmcc,
-            t112,
-            strangle,
-            selectedStrategy,
-            selectedScore,
-            selectedSignal,
-            warnings: [],
-            missingData
-          } as ScanResult;
-        })
-      );
+      const batchResults = await Promise.all(batch.map(async (ticker) => {
+        const data = await fetchTickerData(ticker);
+        if (data.hasIVData) withIV++; else withoutIV++;
+        
+        if (config.minIVRank > 0 && (data.ivRank === null || data.ivRank < config.minIVRank)) return null;
+        if (config.maxIVRank < 100 && data.ivRank !== null && data.ivRank > config.maxIVRank) return null;
+        if (config.excludeEarningsWithin > 0 && data.daysToEarnings !== null && data.daysToEarnings <= config.excludeEarningsWithin) return null;
+        
+        let ipmcc: StrategyScore | null = null, t112: StrategyScore | null = null, strangle: StrategyScore | null = null;
+        if (config.strategy === 'all' || config.strategy === 'ipmcc') ipmcc = scoreIPMCC(data, macro);
+        if (config.strategy === 'all' || config.strategy === '112') t112 = score112(data, macro);
+        if (config.strategy === 'all' || config.strategy === 'strangle') strangle = scoreStrangle(data, macro);
+        
+        let selectedStrategy: Strategy, selectedScore: number, selectedSignal: Signal;
+        if (config.strategy !== 'all') {
+          selectedStrategy = config.strategy;
+          const strat = config.strategy === 'ipmcc' ? ipmcc : config.strategy === '112' ? t112 : strangle;
+          selectedScore = strat!.score; selectedSignal = strat!.signal;
+        } else {
+          const scores = [
+            ipmcc && { strategy: 'ipmcc' as Strategy, score: ipmcc.score, signal: ipmcc.signal },
+            t112 && { strategy: '112' as Strategy, score: t112.score, signal: t112.signal },
+            strangle && { strategy: 'strangle' as Strategy, score: strangle.score, signal: strangle.signal }
+          ].filter(Boolean) as { strategy: Strategy; score: number; signal: Signal }[];
+          scores.sort((a, b) => b.score - a.score);
+          selectedStrategy = scores[0].strategy; selectedScore = scores[0].score; selectedSignal = scores[0].signal;
+        }
+        
+        if (selectedScore < config.minScore) return null;
+        
+        const missingData: string[] = [];
+        if (!data.hasIVData) missingData.push('IV');
+        if (!data.hasSectorData) missingData.push('Sector');
+        if (!data.hasEarningsData) missingData.push('Earnings');
+        
+        let category: 'megaCap' | 'largeCap' | 'etf' = 'largeCap';
+        if (TICKER_UNIVERSE.megaCaps.includes(ticker)) category = 'megaCap';
+        else if (TICKER_UNIVERSE.etfs.includes(ticker)) category = 'etf';
+        
+        return { ticker, category, data, ipmcc, t112, strangle, selectedStrategy, selectedScore, selectedSignal, warnings: [], missingData } as ScanResult;
+      }));
       
       scanResults.push(...batchResults.filter(Boolean) as ScanResult[]);
       setProgress(Math.round(((i + batchSize) / tickersToScan.length) * 100));
-      
       await new Promise(r => setTimeout(r, 100));
     }
     
@@ -1048,107 +983,61 @@ export default function LongTermScanner() {
     setPhase('results');
   }, [tickersToScan, macro, config]);
   
-  // Filter & sort results
   const filteredResults = useMemo(() => {
     let filtered = [...results];
-    
-    if (signalFilter === 'buy') {
-      filtered = filtered.filter(r => ['strong_buy', 'buy'].includes(r.selectedSignal));
-    } else if (signalFilter === 'avoid') {
-      filtered = filtered.filter(r => ['avoid', 'strong_avoid'].includes(r.selectedSignal));
-    }
-    
+    if (signalFilter === 'buy') filtered = filtered.filter(r => ['strong_buy', 'buy'].includes(r.selectedSignal));
+    else if (signalFilter === 'avoid') filtered = filtered.filter(r => ['avoid', 'strong_avoid'].includes(r.selectedSignal));
     filtered.sort((a, b) => {
       const valA = sortBy === 'score' ? a.selectedScore : (a.data.ivRank ?? 0);
       const valB = sortBy === 'score' ? b.selectedScore : (b.data.ivRank ?? 0);
       return sortDir === 'desc' ? valB - valA : valA - valB;
     });
-    
     return filtered;
   }, [results, signalFilter, sortBy, sortDir]);
   
-  // Stats
-  const stats = {
-    total: results.length,
-    buySignals: results.filter(r => ['strong_buy', 'buy'].includes(r.selectedSignal)).length,
-    avgScore: results.length ? Math.round(results.reduce((s, r) => s + r.selectedScore, 0) / results.length) : 0
-  };
+  const stats = { total: results.length, buySignals: results.filter(r => ['strong_buy', 'buy'].includes(r.selectedSignal)).length, avgScore: results.length ? Math.round(results.reduce((s, r) => s + r.selectedScore, 0) / results.length) : 0 };
   
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <Link href="/" className="text-sm text-gray-500 hover:text-blue-500 flex items-center gap-1 mb-2">
-            <ArrowLeft className="w-4 h-4" />Dashboard
-          </Link>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Search className="w-6 h-6 text-blue-500" />Long Term Scanner
-          </h1>
-          <p className="text-gray-500">Configure and scan for options opportunities</p>
+          <Link href="/" className="text-sm text-gray-500 hover:text-blue-500 flex items-center gap-1 mb-2"><ArrowLeft className="w-4 h-4" />Dashboard</Link>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Search className="w-6 h-6 text-blue-500" />Long Term Scanner <span className="text-sm font-normal text-gray-500">v3.0</span></h1>
+          <p className="text-gray-500">Scan 80 tickers with min score filtering</p>
         </div>
-        {phase === 'results' && (
-          <button
-            onClick={() => setPhase('config')}
-            className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 px-4 py-2 rounded-lg flex items-center gap-2"
-          >
-            <Settings className="w-4 h-4" />
-            New Scan
-          </button>
-        )}
+        {phase === 'results' && <button onClick={() => setPhase('config')} className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 px-4 py-2 rounded-lg flex items-center gap-2"><Settings className="w-4 h-4" />New Scan</button>}
       </div>
       
-      {/* Config Phase */}
-      {phase === 'config' && (
-        <ScanConfigPanel 
-          config={config} 
-          setConfig={setConfig} 
-          onStartScan={runScan}
-          macro={macro}
-        />
-      )}
+      {phase === 'config' && <ScanConfigPanel config={config} setConfig={setConfig} onStartScan={runScan} macro={macro} />}
       
-      {/* Scanning Phase */}
       {phase === 'scanning' && (
         <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center shadow">
           <RefreshCw className="w-12 h-12 mx-auto mb-4 text-blue-500 animate-spin" />
           <h3 className="text-lg font-medium mb-2">Scanning {tickersToScan.length} tickers...</h3>
-          <p className="text-gray-500 mb-4">
-            Strategy: {config.strategy === 'all' ? 'All Strategies' : config.strategy.toUpperCase()}
-          </p>
-          <div className="w-64 mx-auto h-3 bg-gray-200 rounded-full">
-            <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
-          </div>
+          <p className="text-gray-500 mb-4">Strategy: {config.strategy === 'all' ? 'All' : config.strategy.toUpperCase()} • Min: {config.minScore}</p>
+          <div className="w-64 mx-auto h-3 bg-gray-200 rounded-full"><div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${progress}%` }} /></div>
           <p className="text-sm text-gray-500 mt-2">{progress}%</p>
         </div>
       )}
       
-      {/* Results Phase */}
       {phase === 'results' && (
         <>
-          {/* Data Warning */}
           {dataStats.withoutIV > 0 && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 rounded-lg p-4">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-yellow-600" />
                 <div>
-                  <span className="font-medium text-yellow-800 dark:text-yellow-300">
-                    IV Data Unavailable
-                  </span>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-400">
-                    {dataStats.withoutIV} of {dataStats.withIV + dataStats.withoutIV} tickers missing IV Rank data. 
-                    Scores for these tickers are based on available data only.
-                  </p>
+                  <span className="font-medium text-yellow-800 dark:text-yellow-300">IV Data Missing</span>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-400">{dataStats.withoutIV} tickers. Click results for detailed setups.</p>
                 </div>
               </div>
             </div>
           )}
           
-          {/* Stats */}
           <div className="grid grid-cols-4 gap-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow text-center">
               <div className="text-2xl font-bold text-blue-500">{stats.total}</div>
-              <div className="text-xs text-gray-500">Results</div>
+              <div className="text-xs text-gray-500">Results (≥{config.minScore})</div>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow text-center">
               <div className="text-2xl font-bold text-green-500">{stats.buySignals}</div>
@@ -1160,36 +1049,28 @@ export default function LongTermScanner() {
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow text-center">
               <div className="text-2xl font-bold">{dataStats.withIV}</div>
-              <div className="text-xs text-gray-500">With IV Data</div>
+              <div className="text-xs text-gray-500">With IV</div>
             </div>
           </div>
           
-          {/* Filters */}
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow flex gap-4">
             <div>
               <label className="text-xs text-gray-500 block mb-1">Signal</label>
-              <select value={signalFilter} onChange={e => setSignalFilter(e.target.value as any)}
-                className="border rounded px-3 py-2 bg-white dark:bg-gray-700">
-                <option value="all">All</option>
-                <option value="buy">Buy Only</option>
-                <option value="avoid">Avoid Only</option>
+              <select value={signalFilter} onChange={e => setSignalFilter(e.target.value as any)} className="border rounded px-3 py-2 bg-white dark:bg-gray-700">
+                <option value="all">All</option><option value="buy">Buy Only</option><option value="avoid">Avoid Only</option>
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Sort By</label>
-              <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
-                className="border rounded px-3 py-2 bg-white dark:bg-gray-700">
-                <option value="score">Score</option>
-                <option value="ivRank">IV Rank</option>
+              <label className="text-xs text-gray-500 block mb-1">Sort</label>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="border rounded px-3 py-2 bg-white dark:bg-gray-700">
+                <option value="score">Score</option><option value="ivRank">IV Rank</option>
               </select>
             </div>
-            <button onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')} 
-              className="mt-5 p-2 bg-gray-100 dark:bg-gray-700 rounded">
+            <button onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')} className="mt-5 p-2 bg-gray-100 dark:bg-gray-700 rounded">
               {sortDir === 'desc' ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             </button>
           </div>
           
-          {/* Results Table */}
           {filteredResults.length > 0 ? (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
               <table className="w-full">
@@ -1203,29 +1084,19 @@ export default function LongTermScanner() {
                     <th className="text-left py-3 px-4">Earnings</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {filteredResults.map(r => (
-                    <ResultRow 
-                      key={r.ticker} 
-                      result={r} 
-                      strategy={config.strategy}
-                      onClick={() => setSelectedResult(r)} 
-                    />
-                  ))}
-                </tbody>
+                <tbody>{filteredResults.map(r => <ResultRow key={r.ticker} result={r} strategy={config.strategy} onClick={() => setSelectedResult(r)} />)}</tbody>
               </table>
             </div>
           ) : (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center shadow">
               <Search className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <h3 className="text-lg font-medium mb-2">No Results</h3>
-              <p className="text-gray-500">No tickers matched your filter criteria</p>
+              <p className="text-gray-500">No tickers met criteria (min: {config.minScore})</p>
             </div>
           )}
         </>
       )}
       
-      {/* Detail Modal */}
       {selectedResult && <DetailModal result={selectedResult} onClose={() => setSelectedResult(null)} />}
     </div>
   );

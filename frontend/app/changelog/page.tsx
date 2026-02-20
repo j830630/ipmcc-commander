@@ -16,6 +16,48 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.0',
+    date: '2026-02-18',
+    type: 'major',
+    highlights: [
+      'Long Term Scanner optimized (120 → 80 tickers)',
+      'Minimum score filter to remove weak setups',
+      'Enhanced detail modal with live trade setups'
+    ],
+    changes: [
+      {
+        category: 'added',
+        items: [
+          'Min Score filter (default 50) - filters out low-quality trade setups during scan',
+          'Enhanced Detail Modal fetches live data from /api/v1/scanner/enhanced/single/{strategy}/{symbol}',
+          'Rule validation panel showing pass/fail for each strategy check with point weights',
+          'Live metrics display: Score, Current IV %, RSI, Data Source indicator',
+          'IPMCC setup details: LEAP strike/delta/DTE, Short Call strike/extrinsic, Income Velocity %',
+          '112/Strangle setup details: Complete leg structure with strikes and deltas',
+          'Quick Trade button pre-fills position form with recommended strikes from scanner'
+        ]
+      },
+      {
+        category: 'changed',
+        items: [
+          'Ticker universe reduced from 120 to 80 for ~33% faster scans',
+          'Mega caps: 50 → 30 (top by options liquidity)',
+          'Large caps: 50 → 30 (high-growth with good options volume)',
+          'ETFs: 20 unchanged',
+          'Results stats now show "Results (≥50)" indicating min score filter',
+          'Scan button shows both ticker count and min score threshold'
+        ]
+      },
+      {
+        category: 'fixed',
+        items: [
+          'Scanner no longer returns excessive low-quality results',
+          'Detail modal now shows meaningful trade data instead of just basic metrics'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.9.3',
     date: '2026-02-16',
     type: 'minor',
