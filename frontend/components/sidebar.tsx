@@ -12,18 +12,11 @@ import {
   ChevronLeft,
   Search,
   Calendar,
-  FileText,
-  Target,
-  GitBranch,
   BarChart3,
   Shield,
-  Plug,
   Calculator,
   ClipboardList,
   ScrollText,
-  Zap,
-  GraduationCap,
-  Bug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/lib/store';
@@ -90,42 +83,7 @@ const navSections: NavSection[] = [
       },
     ],
   },
-  {
-    title: '0-DTE Trading',
-    items: [
-      {
-        name: '0-DTE Dashboard',
-        href: '/zero-dte',
-        icon: Zap,
-        badge: 'NEW',
-      },
-      {
-        name: 'Trade Scanner',
-        href: '/zero-dte/scanner',
-        icon: Search,
-      },
-      {
-        name: 'Command Center',
-        href: '/zero-dte/audit',
-        icon: Bug,
-      },
-      {
-        name: 'Trade Builder',
-        href: '/zero-dte/trade',
-        icon: Target,
-      },
-      {
-        name: 'Kill Switch',
-        href: '/zero-dte/monitor',
-        icon: Shield,
-      },
-      {
-        name: '0-DTE Guide',
-        href: '/zero-dte/guide',
-        icon: GraduationCap,
-      },
-    ],
-  },
+
   {
     title: 'Resources',
     items: [

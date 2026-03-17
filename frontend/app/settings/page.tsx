@@ -14,7 +14,6 @@ import {
   ExternalLink,
   RefreshCw,
   Monitor,
-  Zap,
   DollarSign,
   TrendingUp
 } from 'lucide-react';
@@ -29,7 +28,6 @@ interface SettingsSection {
 const sections: SettingsSection[] = [
   { id: 'api', title: 'API Connections', icon: Key, description: 'Configure broker API credentials' },
   { id: 'trading', title: 'Trading Preferences', icon: TrendingUp, description: 'Default values for trading' },
-  { id: 'zeroDte', title: '0-DTE Settings', icon: Zap, description: 'Configure 0-DTE specific options' },
   { id: 'notifications', title: 'Notifications', icon: Bell, description: 'Alert and notification settings' },
   { id: 'display', title: 'Display', icon: Palette, description: 'Theme and appearance settings' },
 ];
@@ -50,16 +48,8 @@ export default function SettingsPage() {
   const [profitTarget, setProfitTarget] = useState(35);
   const [stopLoss, setStopLoss] = useState(200);
   
-  // 0-DTE Settings
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState(30);
-  const [killSwitchEnabled, setKillSwitchEnabled] = useState(true);
-  const [vixSpikeThreshold, setVixSpikeThreshold] = useState(10);
-  const [exitTimeWarning, setExitTimeWarning] = useState(15);
-  
   // Notification Settings
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [killSwitchAlerts, setKillSwitchAlerts] = useState(true);
   const [profitAlerts, setProfitAlerts] = useState(true);
   const [eventAlerts, setEventAlerts] = useState(true);
   
@@ -292,102 +282,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* 0-DTE Settings */}
-          {activeSection === 'zeroDte' && (
-            <div className="card p-6 space-y-6">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <Zap className="w-5 h-5 text-yellow-500" />
-                0-DTE Settings
-              </h2>
-
-              <div className="space-y-4">
-                {/* Auto Refresh */}
-                <div className="flex items-center justify-between p-4 bg-[var(--surface)] rounded-lg">
-                  <div>
-                    <p className="font-medium">Auto-Refresh Data</p>
-                    <p className="text-sm text-[var(--text-secondary)]">
-                      Automatically refresh market data
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={autoRefresh}
-                      onChange={(e) => setAutoRefresh(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-[var(--border)] rounded-full peer peer-checked:bg-primary after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                  </label>
-                </div>
-
-                {autoRefresh && (
-                  <div className="ml-4">
-                    <label className="block text-sm font-medium mb-2">Refresh Interval (seconds)</label>
-                    <input
-                      type="number"
-                      min="10"
-                      max="120"
-                      value={refreshInterval}
-                      onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                      className="input w-32"
-                    />
-                  </div>
-                )}
-
-                {/* Kill Switch */}
-                <div className="flex items-center justify-between p-4 bg-[var(--surface)] rounded-lg">
-                  <div>
-                    <p className="font-medium">Kill Switch Enabled</p>
-                    <p className="text-sm text-[var(--text-secondary)]">
-                      Enable automatic risk alerts
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={killSwitchEnabled}
-                      onChange={(e) => setKillSwitchEnabled(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-[var(--border)] rounded-full peer peer-checked:bg-red-500 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">VIX Spike Threshold (%)</label>
-                    <input
-                      type="number"
-                      min="5"
-                      max="25"
-                      value={vixSpikeThreshold}
-                      onChange={(e) => setVixSpikeThreshold(Number(e.target.value))}
-                      className="input w-full"
-                    />
-                    <p className="text-xs text-[var(--text-secondary)] mt-1">
-                      Trigger kill switch when VIX1D spikes above this %
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Exit Warning Time (minutes)</label>
-                    <input
-                      type="number"
-                      min="5"
-                      max="60"
-                      value={exitTimeWarning}
-                      onChange={(e) => setExitTimeWarning(Number(e.target.value))}
-                      className="input w-full"
-                    />
-                    <p className="text-xs text-[var(--text-secondary)] mt-1">
-                      Minutes before 4PM to start exit warnings
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Notifications */}
           {activeSection === 'notifications' && (
             <div className="card p-6 space-y-6">
@@ -409,24 +303,6 @@ export default function SettingsPage() {
                       type="checkbox"
                       checked={soundEnabled}
                       onChange={(e) => setSoundEnabled(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-[var(--border)] rounded-full peer peer-checked:bg-primary after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-[var(--surface)] rounded-lg">
-                  <div>
-                    <p className="font-medium">Kill Switch Alerts</p>
-                    <p className="text-sm text-[var(--text-secondary)]">
-                      Alert when kill switch conditions are met
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={killSwitchAlerts}
-                      onChange={(e) => setKillSwitchAlerts(e.target.checked)}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-[var(--border)] rounded-full peer peer-checked:bg-primary after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>

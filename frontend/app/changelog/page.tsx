@@ -16,6 +16,45 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.1.0',
+    date: '2026-03-12',
+    type: 'major',
+    highlights: [
+      'Removed all 0-DTE trading functionality',
+      'Platform now focused exclusively on long-term strategies',
+      'Cleaner navigation and simplified codebase'
+    ],
+    changes: [
+      {
+        category: 'removed',
+        items: [
+          '0-DTE Dashboard and all 0-DTE pages',
+          '0-DTE Trade Scanner, Command Center, Trade Builder',
+          '0-DTE Kill Switch and Monitor pages',
+          '0-DTE Guide page',
+          '0-DTE backend endpoints (/api/v1/zero-dte/*)',
+          '0-DTE service files (zero_dte.py, event_0dte_service.py)',
+          '0-DTE Trading section from sidebar navigation'
+        ]
+      },
+      {
+        category: 'changed',
+        items: [
+          'Home page now shows Available Strategies panel instead of 0-DTE section',
+          'Sidebar navigation simplified - no more 0-DTE section',
+          'Platform description updated to focus on long-term income strategies'
+        ]
+      },
+      {
+        category: 'added',
+        items: [
+          'Available Strategies panel showing IPMCC, 112 Trade, and Strangles',
+          'Strategy badges indicating Primary/Income/Premium classification'
+        ]
+      }
+    ]
+  },
+  {
     version: '3.0.0',
     date: '2026-02-18',
     type: 'major',

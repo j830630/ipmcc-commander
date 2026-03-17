@@ -15,13 +15,13 @@ import {
 
 type ViewMode = 'positions' | 'history' | 'analytics';
 type PositionStatus = 'open' | 'closed' | 'rolled';
-type Strategy = 'ipmcc' | '112' | 'strangle' | '0dte_vertical' | '0dte_butterfly' | '0dte_condor' | 'other';
+type Strategy = 'ipmcc' | '112' | 'strangle' | 'bwb' | 'spread' | 'other';
 
 interface Position {
   id: string;
   ticker: string;
   strategy: Strategy;
-  strategyCategory: 'swing' | '0dte';
+  strategyCategory: 'swing';
   status: PositionStatus;
   // Entry details
   entryDate: string;
@@ -98,8 +98,8 @@ const MOCK_POSITIONS: Position[] = [
 ];
 
 const MOCK_TRADES: Trade[] = [
-  { id: '1', date: '2026-02-14', ticker: 'SPY', strategy: '0dte_vertical', tradeType: 'close', optionType: 'PUT SPREAD', strike: 585, expiration: '2026-02-14', quantity: 2, price: 0.35, totalValue: 70, fees: 1.30, pnl: 185, notes: 'Target hit' },
-  { id: '2', date: '2026-02-13', ticker: 'QQQ', strategy: '0dte_butterfly', tradeType: 'close', optionType: 'CALL BFLY', strike: 520, expiration: '2026-02-13', quantity: 1, price: 2.80, totalValue: 280, fees: 2.60, pnl: -45, notes: 'Stopped out' },
+  { id: '1', date: '2026-02-14', ticker: 'META', strategy: 'ipmcc', tradeType: 'close', optionType: 'CALL', strike: 585, expiration: '2026-03-14', quantity: 2, price: 3.45, totalValue: 690, fees: 1.30, pnl: 185, notes: 'Target hit' },
+  { id: '2', date: '2026-02-13', ticker: 'AMZN', strategy: '112', tradeType: 'close', optionType: '112 SPREAD', strike: 210, expiration: '2026-03-07', quantity: 1, price: 2.80, totalValue: 280, fees: 2.60, pnl: -45, notes: 'Stopped out' },
   { id: '3', date: '2026-02-12', ticker: 'NVDA', strategy: '112', tradeType: 'open', optionType: 'CALL 112', strike: 880, expiration: '2026-03-14', quantity: 1, price: 1.20, totalValue: 120, fees: 1.95, pnl: null, notes: 'Bullish setup' },
   { id: '4', date: '2026-02-10', ticker: 'AAPL', strategy: 'ipmcc', tradeType: 'open', optionType: 'CALL', strike: 245, expiration: '2026-03-21', quantity: 2, price: 2.45, totalValue: 490, fees: 1.30, pnl: null, notes: 'Covered call' },
   { id: '5', date: '2026-02-08', ticker: 'SPY', strategy: 'strangle', tradeType: 'open', optionType: 'STRANGLE', strike: 580, expiration: '2026-03-07', quantity: 1, price: 4.80, totalValue: 480, fees: 2.60, pnl: null, notes: 'Short strangle' },
@@ -112,8 +112,7 @@ const MOCK_TRADES: Trade[] = [
 function PositionCard({ position }: { position: Position }) {
   const strategyLabels: Record<Strategy, string> = {
     ipmcc: 'IPMCC', '112': '112 Trade', strangle: 'Strangle',
-    '0dte_vertical': '0-DTE Vertical', '0dte_butterfly': '0-DTE Butterfly',
-    '0dte_condor': '0-DTE Condor', other: 'Other'
+    bwb: 'BWB', spread: 'Spread', other: 'Other'
   };
   
   const isProfitable = position.unrealizedPnL >= 0;
@@ -125,9 +124,7 @@ function PositionCard({ position }: { position: Position }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-lg font-bold">{position.ticker}</span>
-            <span className={`text-xs px-2 py-0.5 rounded ${
-              position.strategyCategory === '0dte' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-            }`}>
+            <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">
               {strategyLabels[position.strategy]}
             </span>
           </div>
@@ -190,8 +187,7 @@ function PositionCard({ position }: { position: Position }) {
 function TradeRow({ trade }: { trade: Trade }) {
   const strategyLabels: Record<Strategy, string> = {
     ipmcc: 'IPMCC', '112': '112', strangle: 'Strangle',
-    '0dte_vertical': '0DTE Vert', '0dte_butterfly': '0DTE Bfly',
-    '0dte_condor': '0DTE IC', other: 'Other'
+    bwb: 'BWB', spread: 'Spread', other: 'Other'
   };
   
   return (
@@ -199,9 +195,7 @@ function TradeRow({ trade }: { trade: Trade }) {
       <td className="py-3 px-4 text-sm">{trade.date}</td>
       <td className="py-3 px-4 font-medium">{trade.ticker}</td>
       <td className="py-3 px-4">
-        <span className={`text-xs px-2 py-0.5 rounded ${
-          trade.strategy.startsWith('0dte') ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-        }`}>
+        <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">
           {strategyLabels[trade.strategy]}
         </span>
       </td>
@@ -306,7 +300,7 @@ export default function PositionsPage() {
   const [loading, setLoading] = useState(false);
   
   // Filters
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'swing' | '0dte'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'swing'>('all');
   const [strategyFilter, setStrategyFilter] = useState<'all' | Strategy>('all');
   
   // Fetch positions
@@ -345,11 +339,6 @@ export default function PositionsPage() {
   });
   
   const filteredTrades = trades.filter(t => {
-    if (categoryFilter !== 'all') {
-      const is0dte = t.strategy.startsWith('0dte');
-      if (categoryFilter === '0dte' && !is0dte) return false;
-      if (categoryFilter === 'swing' && is0dte) return false;
-    }
     if (strategyFilter !== 'all' && t.strategy !== strategyFilter) return false;
     return true;
   });
@@ -424,10 +413,13 @@ export default function PositionsPage() {
         
         {/* Filters */}
         <div className="flex gap-2 ml-auto">
-          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)} className="input text-sm">
-            <option value="all">All Categories</option>
-            <option value="swing">Swing (IPMCC/112/Strangle)</option>
-            <option value="0dte">0-DTE</option>
+          <select value={strategyFilter} onChange={e => setStrategyFilter(e.target.value as any)} className="input text-sm">
+            <option value="all">All Strategies</option>
+            <option value="ipmcc">IPMCC</option>
+            <option value="112">112 Trade</option>
+            <option value="strangle">Strangle</option>
+            <option value="bwb">BWB</option>
+            <option value="spread">Spread</option>
           </select>
         </div>
       </div>

@@ -612,7 +612,7 @@ export default function MacroAnalysis() {
     <div className="p-6 space-y-6 animate-fade-in">
       {/* Header */}
       <div>
-        <Link href="/zero-dte/scanner" className="text-sm text-[var(--text-secondary)] hover:text-primary flex items-center gap-1 mb-2">
+        <Link href="/scanner" className="text-sm text-[var(--text-secondary)] hover:text-primary flex items-center gap-1 mb-2">
           <ArrowLeft className="w-4 h-4" />
           Back to Scanner
         </Link>

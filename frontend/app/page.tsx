@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   TrendingUp, TrendingDown, Minus, Activity, BarChart3, Target, Shield,
-  AlertTriangle, CheckCircle, Clock, DollarSign, Zap, Eye, Calendar,
-  ChevronRight, RefreshCw, Globe, Gauge, Waves, Timer, Briefcase,
+  AlertTriangle, CheckCircle, Clock, DollarSign, Eye, Calendar,
+  ChevronRight, RefreshCw, Globe, Gauge, Waves, Briefcase,
   Search, BookOpen, FlaskConical, Award, ArrowUpRight, ArrowDownRight
 } from 'lucide-react';
 
@@ -256,28 +256,37 @@ function StrategyCommandCenter({ positions }: { positions: PositionSummary }) {
           </div>
         </div>
         
-        {/* 0-DTE Strategies */}
-        <div className="card p-5 border-red-500/20">
+        {/* Available Strategies */}
+        <div className="card p-5">
           <div className="flex items-center gap-2 mb-4">
-            <Timer className="w-5 h-5 text-red-500" />
-            <h3 className="font-semibold">0-DTE Trading</h3>
-            <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded">The Desk</span>
+            <Target className="w-5 h-5 text-emerald-500" />
+            <h3 className="font-semibold">Available Strategies</h3>
           </div>
           <p className="text-sm text-[var(--text-secondary)] mb-4">
-            Intraday defined-risk structures using GEX and flow analysis
+            Validated income strategies with guide-compliant rules
           </p>
-          <div className="space-y-2">
-            <Link href="/zero-dte" className="flex items-center justify-between p-3 bg-red-500/5 rounded-lg hover:bg-red-500/10 transition-colors border border-red-500/20">
-              <div className="flex items-center gap-3">
-                <Zap className="w-4 h-4 text-red-500" />
-                <span>0-DTE Command Center</span>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-blue-500/5 rounded-lg border border-blue-500/20">
+              <div>
+                <span className="font-medium text-blue-400">IPMCC</span>
+                <p className="text-xs text-[var(--text-secondary)]">Income Poor Man's Covered Call</p>
               </div>
-              <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" />
-            </Link>
-          </div>
-          <div className="mt-4 p-3 bg-red-500/10 rounded-lg text-sm">
-            <p className="text-red-400 font-medium">⚠️ Remember The Desk Rules:</p>
-            <p className="text-xs text-[var(--text-secondary)] mt-1">No scalping. No lottos. Defined risk only.</p>
+              <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Primary</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-purple-500/5 rounded-lg border border-purple-500/20">
+              <div>
+                <span className="font-medium text-purple-400">112 Trade</span>
+                <p className="text-xs text-[var(--text-secondary)]">Ratio spread structure</p>
+              </div>
+              <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">Income</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-emerald-500/5 rounded-lg border border-emerald-500/20">
+              <div>
+                <span className="font-medium text-emerald-400">Strangles</span>
+                <p className="text-xs text-[var(--text-secondary)]">Volatility collection</p>
+              </div>
+              <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">Premium</span>
+            </div>
           </div>
         </div>
       </div>
@@ -375,10 +384,6 @@ export default function Dashboard() {
       const avgChange = (spyData.change_pct + qqqData.change_pct + iwmData.change_pct) / 3;
       const marketTrend = avgChange > 0.5 ? 'bullish' : avgChange < -0.5 ? 'bearish' : 'neutral';
       
-      // Check for binary events
-      const eventsRes = await fetch('/api/v1/scanner/events/0dte');
-      const eventsData = eventsRes.ok ? await eventsRes.json() : { has_binary_event: false };
-      
       // FOMC dates
       const fomcDates = ['2026-01-28', '2026-03-18', '2026-04-29', '2026-06-17'];
       const today = new Date();
@@ -413,8 +418,8 @@ export default function Dashboard() {
         dxyIndex: null,
         nextFOMC,
         daysToFOMC,
-        hasBinaryEvent: eventsData.has_binary_event || false,
-        eventWarning: eventsData.event_override || null
+        hasBinaryEvent: daysToFOMC !== null && daysToFOMC <= 5,
+        eventWarning: daysToFOMC !== null && daysToFOMC <= 5 ? `FOMC in ${daysToFOMC} days` : null
       });
     } catch (err) {
       console.error('Error fetching sentiment:', err);
